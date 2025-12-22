@@ -1,3 +1,4 @@
+```
 # 📚 NestJS Learning Journey (索引)
 
 这里是项目学习文档的总入口。为了保持轻量和条理，所有的具体知识点都拆分成了独立的原子笔记。
@@ -13,6 +14,9 @@
 
 > 新的笔记将自动添加到下方
 
+- **[002. CLI 效率优化与资源生成](notes/002-cli-scripts-resource.md)**
+  - NPM 脚本别名配置与 nest g resource 全家桶生成指南
+
 
 
 
@@ -21,3 +25,4 @@
 - 所有的详细笔记存放在 `docs/notes/` 目录下。
 - 命名格式：`SEQ-topic-name.md` (例如 `002-controller-basics.md`)。
 - 每次新增笔记后，必须更新本文件的目录。
+```

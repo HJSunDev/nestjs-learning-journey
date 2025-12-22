@@ -32,7 +32,7 @@ npx @nestjs/cli new nest-journey
 
 * `npm` (Node.js 默认) 推荐
 * `yarn`
-* `pnpm` (可能遇到问题)
+* `pnpm` (Nest Cli对 pnpm支持有问题，会报错)
 
 > **注意**：选择后 CLI 会自动安装依赖 (`node_modules`)。
 
