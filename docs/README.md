@@ -16,6 +16,8 @@
 
 - **[002. CLI 效率优化与资源生成](notes/002-cli-scripts-resource.md)**
   - NPM 脚本别名配置与 nest g resource 全家桶生成指南
+- **[003. RESTful API 风格指南](notes/003-restful-api-basics.md)**
+  - 核心理念、URL 资源设计规范与 HTTP 动词最佳实践
 
 
 
