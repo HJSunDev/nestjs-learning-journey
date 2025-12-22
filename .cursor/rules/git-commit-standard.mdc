@@ -1,0 +1,32 @@
+---
+description: Use when composing commit messages
+alwaysApply: false
+---
+请按照以下规范帮我生成或检查 commit 消息
+
+格式：<type>(<scope>): <subject>
+
+<详细描述>
+
+类型选择：
+- feat: 新功能
+- fix: 修复bug
+- docs: 文档
+- style: 样式
+- refactor: 重构
+- perf: 性能
+- test: 测试
+- chore: 构建/依赖
+
+规则：
+1. 使用祈使句
+2. 首字母小写
+3. 不加句号
+4. scope应该尽可能具体（如：chat/RecentChatList 而不是 chat）
+5. subject应该尽可能详细，使用英文
+6. 详细描述部分使用中文，列出具体实现的功能点
+
+重要约束
+- 只输出 commit 消息文本内容
+- 不要生成 `git add`、`git commit` 等命令
+- 不要调用任何工具或执行任何操作

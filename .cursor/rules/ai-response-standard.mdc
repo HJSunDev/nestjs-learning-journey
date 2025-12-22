@@ -1,0 +1,19 @@
+---
+alwaysApply: true
+---
+
+
+
+
+
+# 任务完成后的总结规范 (Task Completion Summary Standard)
+
+## 1. 核心原则 (Core Principles)
+
+- 交互的核心目标是 **简洁、清晰、高效**。
+- 总结内容应只说明最关键的操作信息，避免任何冗长、格式复杂的补充说明。
+
+## 2. 格式限制 (Formatting Restrictions)
+
+- **严禁** 在总结部分使用Markdown表格 (`<table>`)、图标、流程图或任何其他复杂的视觉元素。
+- **严禁** 为简单的总结信息新建一个Markdown文档。所有总结都应在当前的对话流中完成。
