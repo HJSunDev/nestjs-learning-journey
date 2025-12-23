@@ -18,6 +18,8 @@
   - NPM 脚本别名配置与 nest g resource 全家桶生成指南
 - **[003. RESTful API 风格指南](notes/003-restful-api-basics.md)**
   - 核心理念、URL 资源设计规范与 HTTP 动词最佳实践
+- **[004. Swagger 接口文档集成](notes/004-swagger-integration.md)**
+  - 自动化文档生成、配置最佳实践及 DTO 继承的元数据处理
 
 
 
