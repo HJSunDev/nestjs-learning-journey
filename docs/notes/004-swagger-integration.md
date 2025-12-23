@@ -11,10 +11,35 @@
 不建议将大量配置写在 `main.ts`。最佳实践是抽离为独立函数，保持入口文件整洁。通过读取 `package.json` 保持文档版本与项目版本同步。
 
 ### 2.2 装饰器核心体系 (Decorators)
-Swagger 通过装饰器收集元数据：
+Swagger 通过装饰器收集元数据，不同装饰器有明确的作用域要求：
 
-*   **控制器层**: `@ApiTags` (分组), `@ApiOperation` (接口描述), `@ApiResponse` (响应定义)
-*   **DTO 层**: `@ApiProperty` (字段描述、示例值)
+#### A. 控制器级 (Class Level)
+作用于整个控制器类，用于全局分组。
+*   `@ApiTags('用户管理')`：**必须**放在 Controller 类上。将该控制器下的所有接口归为一组。
+
+#### B. 方法级 (Method Level)
+作用于具体的方法（路由），用于描述单个接口。
+*   `@ApiOperation({ summary: '描述' })`：接口的简要说明。
+*   `@ApiResponse({ status: 200 })`：描述返回结果。
+*   **顺序规则**：在同一个方法上，`@Get`/`@Post` 与 Swagger 装饰器的上下顺序**互不影响**。
+    *   *建议风格*：将 Swagger 描述放在最上方，NestJS 路由装饰器放在最靠近方法名的位置（下方）。
+
+#### C. DTO 属性级 (Property Level)
+作用于 DTO 类的属性。
+*   `@ApiProperty()`：**必须**放在属性上。只有加了这个，字段才会出现在文档的 Body 示例中。
+
+```typescript
+// 代码风格示例
+@ApiTags('用户管理') // 1. 分组
+@Controller('users')
+export class UserController {
+
+  @ApiOperation({ summary: '创建用户' }) // 2. 描述
+  @ApiResponse({ status: 201, description: '创建成功' }) // 3. 响应
+  @Post() // 4. 路由 (建议放最后，紧贴方法)
+  create(@Body() dto: CreateUserDto) { ... }
+}
+```
 
 ### 2.3 关键概念：DTO 的继承陷阱 (The PartialType Trap)
 **问题**: 为什么 `UpdateUserDto` 要用 `@nestjs/swagger` 的 `PartialType`？
