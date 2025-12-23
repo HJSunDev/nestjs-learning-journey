@@ -20,6 +20,8 @@
   - 核心理念、URL 资源设计规范与 HTTP 动词最佳实践
 - **[004. Swagger 接口文档集成](notes/004-swagger-integration.md)**
   - 自动化文档生成、配置最佳实践及 DTO 继承的元数据处理
+- **[005. Controller 与 DTO 详解](notes/005-controller-and-dto.md)**
+  - 控制器的职责边界(MVC 演进)、路由装饰器图谱与 DTO 作为数据契约的核心价值
 
 
 
