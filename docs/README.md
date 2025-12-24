@@ -24,8 +24,8 @@
   - 控制器的职责边界(MVC 演进)、路由装饰器图谱与 DTO 作为数据契约的核心价值
 - **[006. 管道(Pipe)与数据校验](notes/006-pipe-validation.md)**
   - Pipe 的拦截原理、ValidationPipe 配置详解(whitelist/transform)及 class-validator 常用装饰器图谱
-
-
+- **[007. IoC (控制反转) 与 DI (依赖注入) 核心原理](notes/007-ioc-and-di-principle.md)**
+  - 深度解析依赖注入机制，脱离框架的原生 TS 实现与 NestJS 容器化管理的对比
 
 
 ## 📝 维护指南
