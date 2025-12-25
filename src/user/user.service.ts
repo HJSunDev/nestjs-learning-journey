@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { HashingService } from '../common/hashing/hashing.service';
@@ -29,6 +29,10 @@ export class UserService {
   }
 
   findOne(id: number) {
+    // 模拟场景：ID 为 999 的用户不存在
+    if (id === 999) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
     return `This action returns a #${id} user`;
   }
 

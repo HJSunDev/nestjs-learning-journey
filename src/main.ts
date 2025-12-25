@@ -2,9 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { setupSwagger } from './common/configs/setup-swagger';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // 注册全局异常过滤器
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   // 开启全局参数校验管道
   app.useGlobalPipes(new ValidationPipe({

@@ -28,6 +28,8 @@
   - 深度解析依赖注入机制，脱离框架的原生 TS 实现与 NestJS 容器化管理的对比
 - **[008. NestJS 模块化 (Modules) 与共享策略](notes/008-modules-and-sharing.md)**
   - 模块的封装与通信机制，Shared Module 的设计模式及实战代码演示
+- **[009. 统一异常处理与 Filter 深度解析](notes/009-exception-filters.md)**
+  - 详解 ArgumentsHost 上下文切换、@Catch 装饰器原理及全局异常治理体系搭建
 
 
 ## 📝 维护指南
