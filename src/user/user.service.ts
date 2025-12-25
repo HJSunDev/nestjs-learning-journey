@@ -1,13 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { HashingService } from '../common/hashing/hashing.service';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly hashingService: HashingService) {}
+  constructor(
+    private readonly hashingService: HashingService,
+    private readonly configService: ConfigService, // 👈 注入 ConfigService
+  ) {}
 
   async create(createUserDto: CreateUserDto) {
+    // 演示读取环境变量
+    const dbHost = this.configService.get<string>('DATABASE_HOST');
+    console.log(`[DEBUG] Connecting to DB at ${dbHost}...`);
+
     // 使用共享模块 HashingService 对密码进行加密
     const hashedPassword = await this.hashingService.hash(createUserDto.password);
 

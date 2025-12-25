@@ -30,6 +30,8 @@
   - 模块的封装与通信机制，Shared Module 的设计模式及实战代码演示
 - **[009. 统一异常处理与 Filter 深度解析](notes/009-exception-filters.md)**
   - 详解 ArgumentsHost 上下文切换、@Catch 装饰器原理及全局异常治理体系搭建
+- **[010. 全局配置管理 (Config) 最佳实践](notes/010-configuration.md)**
+  - .env 环境变量管理、ConfigModule 全局封装及 Joi 强校验机制解析
 
 
 ## 📝 维护指南
