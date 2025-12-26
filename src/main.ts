@@ -1,11 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { setupSwagger } from './common/configs/setup-swagger';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // 获取 ConfigService 实例
+  const configService = app.get(ConfigService);
 
   // 注册全局异常过滤器
   app.useGlobalFilters(new HttpExceptionFilter());
@@ -19,6 +22,7 @@ async function bootstrap() {
   // 集成 Swagger 文档
   setupSwagger(app);
 
-  await app.listen(process.env.PORT ?? 3000);
+  const port = configService.get<number>('port') ?? 3000;
+  await app.listen(port);
 }
 bootstrap();

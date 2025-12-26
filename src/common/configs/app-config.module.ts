@@ -5,18 +5,35 @@ import * as Joi from 'joi';
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, // 关键：设置为全局模块，这样其他模块不需要再次导入 ConfigModule
-      envFilePath: '.env', // 指定环境文件路径
+      isGlobal: true,
+      envFilePath: '.env',
+      // 1. 强校验：确保 .env 文件中必须存在某些变量，且格式正确
       validationSchema: Joi.object({
-        // 核心：使用 Joi 进行强校验，确保环境变量存在且格式正确
-        PORT: Joi.number().default(3000),
-        DATABASE_HOST: Joi.string().required(),
-        DATABASE_PORT: Joi.number().required(),
-        API_KEY: Joi.string().required(),
+        APP_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+        APP_PORT: Joi.number().default(3000),
+        DB_URL: Joi.string().required(),
+        DB_NAME: Joi.string().required(),
+        DB_USER: Joi.string().required(),
+        DB_PASS: Joi.string().required(),
+        DB_SYNCHRONIZE: Joi.boolean().default(false),
+        DB_LOGGING: Joi.boolean().default(false),
       }),
+      // 2. 结构化与类型转换：将扁平的 env 字符串转换为结构化对象，方便在代码中使用
+      load: [() => ({
+        env: process.env.APP_ENV,
+        port: parseInt(process.env.APP_PORT || '3000', 10),
+        database: {
+          url: process.env.DB_URL,
+          name: process.env.DB_NAME,
+          user: process.env.DB_USER,
+          pass: process.env.DB_PASS,
+          synchronize: process.env.DB_SYNCHRONIZE === 'true',
+          logging: process.env.DB_LOGGING === 'true',
+        },
+      })],
     }),
   ],
-  exports: [ConfigModule], // 导出原始 ConfigModule，虽然 isGlobal: true 不需要显式导出，但作为包装模块这是个好习惯
+  exports: [ConfigModule],
 })
 export class AppConfigModule {}
 

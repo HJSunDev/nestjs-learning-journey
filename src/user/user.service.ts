@@ -13,8 +13,10 @@ export class UserService {
 
   async create(createUserDto: CreateUserDto) {
     // 演示读取环境变量
-    const dbHost = this.configService.get<string>('DATABASE_HOST');
-    console.log(`[DEBUG] Connecting to DB at ${dbHost}...`);
+    // 旧代码：const dbHost = this.configService.get<string>('DATABASE_HOST');
+    // 新代码：读取新的 database.url 配置项
+    const dbUrl = this.configService.get<string>('database.url');
+    console.log(`[DEBUG] Connecting to DB with URL length: ${dbUrl?.length}...`);
 
     // 使用共享模块 HashingService 对密码进行加密
     const hashedPassword = await this.hashingService.hash(createUserDto.password);
