@@ -32,6 +32,8 @@
   - 详解 ArgumentsHost 上下文切换、@Catch 装饰器原理及全局异常治理体系搭建
 - **[010. 全局配置管理 (Config) 最佳实践](notes/010-configuration.md)**
   - .env 环境变量管理、ConfigModule 全局封装及 Joi 强校验机制解析
+- **[012. Docker 环境集成与数据持久化](notes/012-docker-environment.md)**
+  - Docker Compose 编排 MongoDB 服务，Volume 数据挂载与 Git 忽略策略详解
 
 
 ## 📝 维护指南
