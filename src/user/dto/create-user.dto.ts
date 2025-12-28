@@ -27,7 +27,7 @@ export class CreateUserDto {
   @IsString()
   @MinLength(2, { message: '用户名至少包含 2 个字符' })
   @MaxLength(20, { message: '用户名最多包含 20 个字符' })
-  username: string;
+  name: string;
 
   @ApiProperty({
     description: '手机号码',
