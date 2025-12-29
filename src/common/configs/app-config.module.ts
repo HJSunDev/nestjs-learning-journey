@@ -20,6 +20,9 @@ import * as Joi from 'joi';
         DB_AUTH_SOURCE: Joi.string().default('admin'),
         DB_SYNCHRONIZE: Joi.boolean().default(false),
         DB_LOGGING: Joi.boolean().default(false),
+        // 日志配置
+        LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly').default('info'),
+        LOG_ON_CONSOLE: Joi.boolean().default(true),
       }),
       // 2. 结构化与类型转换：将扁平的 env 字符串转换为结构化对象，方便在代码中使用
       load: [() => ({
@@ -34,6 +37,10 @@ import * as Joi from 'joi';
           authSource: process.env.DB_AUTH_SOURCE,
           synchronize: process.env.DB_SYNCHRONIZE === 'true',
           logging: process.env.DB_LOGGING === 'true',
+        },
+        logger: {
+          level: process.env.LOG_LEVEL,
+          onConsole: process.env.LOG_ON_CONSOLE === 'true',
         },
       })],
     }),

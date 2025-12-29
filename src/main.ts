@@ -1,12 +1,20 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
 import { setupSwagger } from './common/configs/setup-swagger';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // 1. 创建应用实例，开启 bufferLogs 以便完全接管启动日志
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+  });
+
+  // 2. 获取 Winston 实例并替换全局 Logger
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
+
   // 获取 ConfigService 实例
   const configService = app.get(ConfigService);
 

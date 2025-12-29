@@ -37,7 +37,8 @@
   - MongoDB 实体定义、ObjectId 处理及 CRUD 实践
 - **[012. Docker 环境集成与数据持久化](notes/012-docker-environment.md)**
   - Docker Compose 编排 MongoDB 服务，Volume 数据挂载与 Git 忽略策略详解
-
+- **[013. Winston 分级日志与日志轮转](notes/013-advanced-logging.md)**
+  - Winston 集成、DailyRotateFile 策略、Buffer Logs 原理及生产环境分级配置
 
 ## 📝 维护指南
 

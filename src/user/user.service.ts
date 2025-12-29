@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ObjectId } from 'mongodb';
@@ -9,6 +9,9 @@ import { User } from './entities/user.mongo.entity';
 
 @Injectable()
 export class UserService {
+  // 1. 初始化 Logger，上下文设置为 'UserService'，这样日志里会显示 [UserService]
+  private readonly logger = new Logger(UserService.name);
+
   // 构造函数注入：依赖注入的核心
   constructor(
     // @InjectRepository(User): 是一个装饰器，告诉 NestJS "请给我 User 实体的仓库"
@@ -19,6 +22,9 @@ export class UserService {
   ) {}
 
   async create(createUserDto: CreateUserDto) {
+    // 2. 记录业务日志
+    this.logger.log(`开始创建用户: ${createUserDto.email}`);
+    
     // 使用共享模块 HashingService 对密码进行加密
     const hashedPassword = await this.hashingService.hash(createUserDto.password);
     
@@ -35,7 +41,11 @@ export class UserService {
     // this.userRepository.save():
     // 真正的数据库写操作。相当于 SQL 的 INSERT 或 Mongo 的 db.collection.save()
     // 它会返回保存到数据库后的完整对象（包括自动生成的 _id）
-    return await this.userRepository.save(newUser);
+    const savedUser = await this.userRepository.save(newUser);
+    
+    this.logger.log(`用户创建成功, ID: ${savedUser._id}`);
+    
+    return savedUser;
   }
 
   async findAll() {
