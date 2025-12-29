@@ -39,6 +39,8 @@
   - Docker Compose 编排 MongoDB 服务，Volume 数据挂载与 Git 忽略策略详解
 - **[013. Winston 分级日志与日志轮转](notes/013-advanced-logging.md)**
   - Winston 集成、DailyRotateFile 策略、Buffer Logs 原理及生产环境分级配置
+- **[014. 三层架构与目录规范](notes/014-three-tier-architecture.md)**
+  - 详解 Controller/Service/Repository 职责边界、关注点分离(SoC) 与 NestJS 推荐的领域驱动目录结构
 
 ## 📝 维护指南
 
