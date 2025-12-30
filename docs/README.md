@@ -43,6 +43,8 @@
   - 详解 Controller/Service/Repository 职责边界、关注点分离(SoC) 与 NestJS 推荐的领域驱动目录结构
 - **[015. 列表分页功能实现 (Pagination)](notes/015-pagination-implementation.md)**
   - 基于 Offset 的分页设计、通用 DTO 封装、class-transformer 类型转换及 TypeORM findAndCount 实战
+- **[016. 通用实体与软删除 (Common Entity & Soft Delete)](notes/016-common-entity-and-soft-delete.md)**
+  - 抽象基类设计、自动化时间戳 (@CreateDateColumn/@UpdateDateColumn) 及 TypeORM 原生软删除机制详解
 
 ## 📝 维护指南
 

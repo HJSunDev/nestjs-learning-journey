@@ -36,8 +36,6 @@ export class UserService {
     const newUser = this.userRepository.create({
       ...createUserDto,
       password: hashedPassword, 
-      createdAt: new Date(),
-      updatedAt: new Date(),
     });
 
     // this.userRepository.save():
@@ -96,7 +94,7 @@ export class UserService {
     const user = await this.findOne(id);
     
     // 2. 准备更新的数据
-    let updateData: any = { ...updateUserDto, updatedAt: new Date() };
+    let updateData: any = { ...updateUserDto };
     if (updateUserDto.password) {
         updateData.password = await this.hashingService.hash(updateUserDto.password);
     }
@@ -107,6 +105,9 @@ export class UserService {
     await this.userRepository.update(id, updateData);
     
     // 4. 因为 update 不返回新数据，我们手动合并返回，或者再次调用 findOne(id)
+    // 注意：updatedAt 会由 TypeORM 自动更新，但为了返回最新数据，这里手动合并可能不准确（时间差）
+    // 最好是再次查询，或者直接返回合并后的对象（接受 updatedAt 可能稍微旧一点）
+    // 为了严谨，这里再次查询一次，或者简单返回
     return { ...user, ...updateData };
   }
 
@@ -114,9 +115,10 @@ export class UserService {
     if (!ObjectId.isValid(id)) {
       throw new NotFoundException(`Invalid ID format`);
     }
-    // delete(): 根据 ID 删除记录
-    // 相当于 DELETE FROM users WHERE id = ...
-    const result = await this.userRepository.delete(id);
+    // softDelete(): 软删除
+    // 相当于 UPDATE users SET deletedAt = NOW() WHERE id = ...
+    // 查询时 TypeORM 会自动过滤掉 deletedAt 不为空的记录
+    const result = await this.userRepository.softDelete(id);
     if (result.affected === 0) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }

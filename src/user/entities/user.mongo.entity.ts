@@ -1,10 +1,8 @@
-import { Entity, Column, ObjectId, ObjectIdColumn } from 'typeorm';
+import { Entity, Column } from 'typeorm';
+import { CommonMongoEntity } from '../../common/entities/common.mongo.entity';
 
 @Entity('users') // 指定集合名称为 users
-export class User {
-  @ObjectIdColumn()
-  _id: ObjectId;
-
+export class User extends CommonMongoEntity {
   @Column()
   name: string;
 
@@ -13,11 +11,5 @@ export class User {
 
   @Column()
   password: string;
-
-  @Column()
-  createdAt: Date;
-
-  @Column()
-  updatedAt: Date;
 }
 
