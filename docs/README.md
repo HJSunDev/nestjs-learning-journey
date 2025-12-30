@@ -41,6 +41,8 @@
   - Winston 集成、DailyRotateFile 策略、Buffer Logs 原理及生产环境分级配置
 - **[014. 三层架构与目录规范](notes/014-three-tier-architecture.md)**
   - 详解 Controller/Service/Repository 职责边界、关注点分离(SoC) 与 NestJS 推荐的领域驱动目录结构
+- **[015. 列表分页功能实现 (Pagination)](notes/015-pagination-implementation.md)**
+  - 基于 Offset 的分页设计、通用 DTO 封装、class-transformer 类型转换及 TypeORM findAndCount 实战
 
 ## 📝 维护指南
 

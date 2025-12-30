@@ -7,6 +7,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { HashingService } from '../common/hashing/hashing.service';
 import { User } from './entities/user.mongo.entity';
 
+import { PaginationQueryDto } from '../common/dto/pagination.dto';
+
 @Injectable()
 export class UserService {
   // 1. 初始化 Logger，上下文设置为 'UserService'，这样日志里会显示 [UserService]
@@ -48,10 +50,26 @@ export class UserService {
     return savedUser;
   }
 
-  async findAll() {
-    // find(): 查找所有记录。
-    // 相当于 SELECT * FROM users
-    return await this.userRepository.find();
+  async findAll(query: PaginationQueryDto) {
+    const { page = 1, limit = 10 } = query;
+    const skip = (page - 1) * limit;
+
+    // findAndCount: 同时返回 数据数组 和 总条数
+    const [data, total] = await this.userRepository.findAndCount({
+      skip,
+      take: limit,
+      order: { createdAt: 'DESC' }, // 按创建时间倒序
+    });
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findOne(id: string) {
