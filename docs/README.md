@@ -45,6 +45,8 @@
   - 基于 Offset 的分页设计、通用 DTO 封装、class-transformer 类型转换及 TypeORM findAndCount 实战
 - **[016. 通用实体与软删除 (Common Entity & Soft Delete)](notes/016-common-entity-and-soft-delete.md)**
   - 抽象基类设计、自动化时间戳 (@CreateDateColumn/@UpdateDateColumn) 及 TypeORM 原生软删除机制详解
+- **[017. RBAC 权限系统设计与实现 (TypeORM + MongoDB)](notes/017-rbac-design-and-implementation.md)**
+  - RBAC0 模型实现、MongoDB JSON 权限字段设计及 User-Role 关联策略
 
 ## 📝 维护指南
 
