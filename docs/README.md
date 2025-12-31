@@ -47,6 +47,8 @@
   - 抽象基类设计、自动化时间戳 (@CreateDateColumn/@UpdateDateColumn) 及 TypeORM 原生软删除机制详解
 - **[017. RBAC 权限系统设计与实现 (TypeORM + MongoDB)](notes/017-rbac-design-and-implementation.md)**
   - RBAC0 模型实现、MongoDB JSON 权限字段设计及 User-Role 关联策略
+- **[018. 敏感信息加密与密码加盐 (Hashing & Salting)](notes/018-hashing-and-encryption.md)**
+  - 为什么不能明文存储、bcrypt 算法原理、自动盐管理机制及 NestJS 集成最佳实践
 
 ## 📝 维护指南
 
