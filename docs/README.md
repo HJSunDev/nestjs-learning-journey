@@ -49,6 +49,8 @@
   - RBAC0 模型实现、MongoDB JSON 权限字段设计及 User-Role 关联策略
 - **[018. 敏感信息加密与密码加盐 (Hashing & Salting)](notes/018-hashing-and-encryption.md)**
   - 为什么不能明文存储、bcrypt 算法原理、自动盐管理机制及 NestJS 集成最佳实践
+- **[019. 拦截器 (Interceptor) 与文件上传流处理](notes/019-interceptor-stream-files.md)**
+  - AOP 编程思想、FileInterceptor 解析 multipart/form-data 流原理及 模块集成和适配方案
 
 ## 📝 维护指南
 

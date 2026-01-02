@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
 import { RoleModule } from './role/role.module';
+import { UploadModule } from './upload/upload.module';
 import { AppConfigModule } from './common/configs/app-config.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -36,6 +37,7 @@ import { ConfigService } from '@nestjs/config';
     }),
     UserModule,
     RoleModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [AppService],

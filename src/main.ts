@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
@@ -8,7 +9,8 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   // 1. 创建应用实例，开启 bufferLogs 以便完全接管启动日志
-  const app = await NestFactory.create(AppModule, {
+  // 使用 NestExpressApplication 泛型，来支持 Express 类型HTTP 适配器特有的方法代码提示 以及 类型推导
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
 
