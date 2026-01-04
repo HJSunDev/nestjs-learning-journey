@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class HashingService {
@@ -22,6 +23,17 @@ export class HashingService {
    */
   async compare(plainText: string, hash: string): Promise<boolean> {
     return bcrypt.compare(plainText, hash);
+  }
+
+  /**
+   * 计算文件的 MD5 指纹
+   * (用于文件秒传、去重、重命名)
+   * @param buffer 文件内容
+   * @returns 32位十六进制字符串
+   */
+  calculateFileHash(buffer: Buffer): string {
+    const md5 = crypto.createHash('md5');
+    return md5.update(buffer).digest('hex');
   }
 }
 

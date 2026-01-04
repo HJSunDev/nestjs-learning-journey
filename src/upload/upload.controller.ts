@@ -2,10 +2,13 @@ import { Controller, Post, UseInterceptors, UploadedFile, Body, Req } from '@nes
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UploadDto } from './dto/upload.dto';
+import { HashingService } from '../common/hashing/hashing.service';
 
 @ApiTags('Upload')
 @Controller('upload')
 export class UploadController {
+  constructor(private readonly hashingService: HashingService) {}
+
   @Post()
   @ApiOperation({ summary: '上传单个文件' })
   @ApiConsumes('multipart/form-data')
@@ -18,6 +21,7 @@ export class UploadController {
     @Body() uploadDto: UploadDto,
     @UploadedFile() file: Express.Multer.File,
   ) {
+    const fileHash = this.hashingService.calculateFileHash(file.buffer);
 
     console.log('upload file info:', file);
     // 这里我们只是演示拦截器的使用，并没有真实的保存文件到云端或磁盘
@@ -25,6 +29,7 @@ export class UploadController {
     return {
       message: '文件流解析成功',
       filename: file.originalname,
+      md5_fingerprint: fileHash, // 展示 MD5 指纹
       mimetype: file.mimetype,
       size: file.size,
       dtoName: uploadDto.name, // 验证 DTO 数据也能被解析

@@ -51,6 +51,8 @@
   - 为什么不能明文存储、bcrypt 算法原理、自动盐管理机制及 NestJS 集成最佳实践
 - **[019. 拦截器 (Interceptor) 与文件上传流处理](notes/019-interceptor-stream-files.md)**
   - AOP 编程思想、FileInterceptor 解析 multipart/form-data 流原理及 模块集成和适配方案
+- **[020. 文件指纹技术与哈希命名 (File Fingerprinting & Hashing)](notes/020-file-fingerprinting-and-hashing.md)**
+  - 基于 MD5 的文件去重与命名策略，对比 Bcrypt 与 Crypto 的适用场景
 
 ## 📝 维护指南
 
