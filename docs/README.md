@@ -53,6 +53,8 @@
   - AOP 编程思想、FileInterceptor 解析 multipart/form-data 流原理及 模块集成和适配方案
 - **[020. 文件指纹技术与哈希命名 (File Fingerprinting & Hashing)](notes/020-file-fingerprinting-and-hashing.md)**
   - 基于 MD5 的文件去重与命名策略，对比 Bcrypt 与 Crypto 的适用场景
+- **[021. 文件上传与图床搭建实战 (Upload & Image Hosting)](notes/021-upload-and-image-hosting.md)**
+  - 静态资源映射、Config 结构化配置、path.resolve 路径安全及 Git 忽略规则
 
 ## 📝 维护指南
 

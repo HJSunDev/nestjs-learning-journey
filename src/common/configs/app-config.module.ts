@@ -23,6 +23,8 @@ import * as Joi from 'joi';
         // 日志配置
         LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly').default('info'),
         LOG_ON_CONSOLE: Joi.boolean().default(true),
+        // 文件上传配置
+        UPLOAD_DIR: Joi.string().allow('').optional(),
       }),
       // 2. 结构化与类型转换：将扁平的 env 字符串转换为结构化对象，方便在代码中使用
       load: [() => ({
@@ -41,6 +43,9 @@ import * as Joi from 'joi';
         logger: {
           level: process.env.LOG_LEVEL,
           onConsole: process.env.LOG_ON_CONSOLE === 'true',
+        },
+        upload: {
+          dir: process.env.UPLOAD_DIR,
         },
       })],
     }),

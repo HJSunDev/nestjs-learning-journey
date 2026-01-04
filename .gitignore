@@ -60,3 +60,6 @@ mongo-data/
 
 # AI Context Mirror (Local Only)
 env.ai
+
+# User uploads
+/static/upload

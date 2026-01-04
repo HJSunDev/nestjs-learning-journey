@@ -6,6 +6,7 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
 import { setupSwagger } from './common/configs/setup-swagger';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { resolve } from 'path';
 
 async function bootstrap() {
   // 1. 创建应用实例，开启 bufferLogs 以便完全接管启动日志
@@ -19,6 +20,18 @@ async function bootstrap() {
 
   // 获取 ConfigService 实例
   const configService = app.get(ConfigService);
+
+  // 配置静态资源服务 (图床)
+  // 1. 获取配置的路径，默认为 'static/upload'
+  const configUploadDir =
+    configService.get<string>('upload.dir') || 'static/upload';
+
+  // 2. 解析为绝对路径 (支持相对路径和绝对路径的自动归一化)
+  const uploadDir = resolve(process.cwd(), configUploadDir);
+
+  app.useStaticAssets(uploadDir, {
+    prefix: '/static/upload', // 虚拟路径前缀，访问时 http://localhost:3000/static/upload/xxx.jpg
+  });
 
   // 注册全局异常过滤器
   app.useGlobalFilters(new HttpExceptionFilter());
