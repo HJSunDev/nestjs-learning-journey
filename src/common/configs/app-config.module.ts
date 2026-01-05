@@ -25,6 +25,9 @@ import * as Joi from 'joi';
         LOG_ON_CONSOLE: Joi.boolean().default(true),
         // 文件上传配置
         UPLOAD_DIR: Joi.string().allow('').optional(),
+        // JWT配置
+        JWT_SECRET: Joi.string().required(),
+        JWT_EXPIRES_IN: Joi.string().default('1d'),
       }),
       // 2. 结构化与类型转换：将扁平的 env 字符串转换为结构化对象，方便在代码中使用
       load: [() => ({
@@ -46,6 +49,10 @@ import * as Joi from 'joi';
         },
         upload: {
           dir: process.env.UPLOAD_DIR,
+        },
+        jwt: {
+          secret: process.env.JWT_SECRET,
+          expiresIn: process.env.JWT_EXPIRES_IN || '1d',
         },
       })],
     }),

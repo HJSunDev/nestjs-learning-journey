@@ -55,6 +55,8 @@
   - 基于 MD5 的文件去重与命名策略，对比 Bcrypt 与 Crypto 的适用场景
 - **[021. 文件上传与图床搭建实战 (Upload & Image Hosting)](notes/021-upload-and-image-hosting.md)**
   - 静态资源映射、Config 结构化配置、path.resolve 路径安全及 Git 忽略规则
+- **[022. JWT 认证与 Token 签发 (Sign & Login)](notes/022-jwt-sign-and-login.md)**
+  - JWT 机制、手机号登录改造、AuthModule 异步配置及跨模块 Provider 导出规范
 
 ## 📝 维护指南
 

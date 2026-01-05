@@ -5,9 +5,11 @@ export class CreateUserDto {
   @ApiProperty({
     description: '用户邮箱',
     example: 'user@example.com',
+    required: false,
   })
+  @IsOptional()
   @IsEmail({}, { message: '邮箱格式不正确' })
-  email: string;
+  email?: string;
 
   @ApiProperty({
     description: '用户密码',

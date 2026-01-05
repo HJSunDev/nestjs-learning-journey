@@ -85,6 +85,10 @@ export class UserService {
     return user;
   }
 
+  async findByPhoneNumber(phoneNumber: string): Promise<User | null> {
+    return this.userRepository.findOneBy({ phoneNumber });
+  }
+
   async update(id: string, updateUserDto: UpdateUserDto) {
     if (!ObjectId.isValid(id)) {
       throw new NotFoundException(`Invalid ID format`);

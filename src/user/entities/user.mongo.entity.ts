@@ -7,8 +7,11 @@ export class User extends CommonMongoEntity {
   @Column()
   name: string;
 
-  @Column()
-  email: string;
+  @Column({ nullable: true })
+  email?: string;
+
+  @Column({ nullable: true })
+  phoneNumber?: string;
 
   @Column()
   password: string;

@@ -14,5 +14,6 @@ import { User } from './entities/user.mongo.entity';
   ],
   controllers: [UserController],
   providers: [UserService],
+  exports: [UserService],
 })
 export class UserModule {}
