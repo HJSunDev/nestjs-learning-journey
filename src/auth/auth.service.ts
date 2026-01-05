@@ -1,8 +1,8 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { HashingService } from '../common/hashing/hashing.service';
-import { LoginDTO, RegisterDTO } from './dto/auth.dto';
+import { LoginDTO, RegisterDTO, UserInfoDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
@@ -11,6 +11,22 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly hashingService: HashingService,
   ) {}
+
+  async info(id: string): Promise<UserInfoDto> {
+    
+    const user = await this.userService.findOne(id);
+    if (!user) {
+        throw new NotFoundException('用户不存在');
+    }
+
+    // 转换为 UserInfoDto，去除敏感信息
+    return {
+        id: user._id.toString(),
+        name: user.name,
+        phoneNumber: user.phoneNumber ?? '',
+        createdAt: user.createdAt
+    };
+  }
 
   async register(registerDto: RegisterDTO) {
     const existingUser = await this.userService.findByPhoneNumber(registerDto.phoneNumber);
@@ -46,7 +62,11 @@ export class AuthService {
   }
 
   private createToken(user: any) {
-    const payload = { id: user._id.toString(), mobile: user.phoneNumber };
+    const payload = { 
+      sub: user._id.toString(),  // 标准字段，存放用户ID
+      id: user._id.toString(),   // 自定义ID，方便前端使用
+      mobile: user.phoneNumber   // 冗余字段，方便日志和前端展示
+    };
     return {
       access_token: this.jwtService.sign(payload),
     };

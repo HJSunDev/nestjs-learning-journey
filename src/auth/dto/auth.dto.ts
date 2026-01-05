@@ -45,4 +45,19 @@ export class RegisterDTO {
   readonly passwordRepeat: string
 }
 
+export class UserInfoDto {
+  @ApiProperty({ example: '13611177421' })
+  phoneNumber: string;
+
+  @ApiProperty({ example: 'admin' })
+  name: string;
+
+  @ApiProperty({ example: '123456' })
+  id: string;
+
+  // 更多字段可以根据 User 实体扩展
+  @ApiProperty({ example: '2024-01-01' })
+  createdAt: Date;
+}
+
 

@@ -283,13 +283,27 @@ export class AuthService {
   }
 
   private createToken(user: any) {
-    const payload = { id: user._id.toString(), mobile: user.phoneNumber };
+    // 最佳实践：Payload 包含 id (sub) 和 mobile
+    const payload = { 
+        sub: user._id.toString(),  // 标准字段，存放用户ID
+        id: user._id.toString(),   // 自定义ID，方便前端使用
+        mobile: user.phoneNumber   // 冗余字段，方便日志和前端展示
+    };
     return {
       access_token: this.jwtService.sign(payload),
     };
   }
 }
 ```
+
+> **💡 Payload 设计解析：**
+>
+> * **核心原则**：**空间换时间**。Payload 越大，每次请求流量越大，因此只放核心数据。
+> * **为什么放 Mobile？ (高性价比冗余)**
+>   1. **日志审计**：服务端打印 Access Log 时，可以直接记录操作人的手机号，无需查库反推。
+>   2. **前端体验**：前端解码 Token 后即可展示“欢迎，138xxxx”，省去一次 `/me` 接口调用。
+>   3. **成本极低**：Mobile 仅增加约 15 字节，对带宽影响可忽略不计。
+> * **禁区**：绝对不要放密码、身份证号等敏感数据（Base64 可逆）。
 
 **步骤 4.4**: 暴露接口 (`src/auth/auth.controller.ts`)。
 

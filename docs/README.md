@@ -57,6 +57,8 @@
   - 静态资源映射、Config 结构化配置、path.resolve 路径安全及 Git 忽略规则
 - **[022. JWT 认证与 Token 签发 (Sign & Login)](notes/022-jwt-sign-and-login.md)**
   - JWT 机制、手机号登录改造、AuthModule 异步配置及跨模块 Provider 导出规范
+- **[023. 全局守卫与 Token 校验 (Global Guard & JWT Strategy)](notes/023-jwt-guard-and-global-auth.md)**
+  - Passport 原理、JWT Strategy 实现、全局守卫配置 (APP_GUARD) 及 @Public 装饰器豁免机制
 
 ## 📝 维护指南
 
