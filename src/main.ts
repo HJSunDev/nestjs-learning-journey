@@ -1,5 +1,5 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { NestFactory, Reflector } from '@nestjs/core';
+import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -35,6 +35,10 @@ async function bootstrap() {
 
   // 注册全局异常过滤器
   app.useGlobalFilters(new HttpExceptionFilter());
+
+  // 注册全局序列化拦截器 (ClassSerializerInterceptor)
+  // 这将自动应用 @Exclude(), @Expose() 等装饰器规则，处理敏感信息
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   // 开启全局参数校验管道
   app.useGlobalPipes(new ValidationPipe({

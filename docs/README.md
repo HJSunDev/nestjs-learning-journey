@@ -62,6 +62,9 @@
 - **[024. 双 Token 鉴权机制 (Access + Refresh Token)](notes/024-double-token-authentication.md)**
   - Access/Refresh Token 机制、滑动过期与令牌轮换 (Rotation) 实现
   - 深度解析 JwtModule、PassportStrategy、AuthGuard 协作原理
+- **[025. 敏感数据处理最佳实践 (Sensitive Data Handling)](notes/025-sensitive-data-best-practices.md)**
+  - 摒弃全局递归拦截器，采用 DTO + ClassSerializerInterceptor 的工业级方案
+  - @Exclude/@Expose 装饰器详解与白名单安全策略
 
 
 
