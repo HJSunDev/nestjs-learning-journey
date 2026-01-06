@@ -25,9 +25,11 @@ import * as Joi from 'joi';
         LOG_ON_CONSOLE: Joi.boolean().default(true),
         // 文件上传配置
         UPLOAD_DIR: Joi.string().allow('').optional(),
-        // JWT配置
-        JWT_SECRET: Joi.string().required(),
-        JWT_EXPIRES_IN: Joi.string().default('1d'),
+        // JWT 双 Token 配置
+        JWT_ACCESS_SECRET: Joi.string().required(),
+        JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
+        JWT_REFRESH_SECRET: Joi.string().required(),
+        JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
       }),
       // 2. 结构化与类型转换：将扁平的 env 字符串转换为结构化对象，方便在代码中使用
       load: [() => ({
@@ -51,8 +53,10 @@ import * as Joi from 'joi';
           dir: process.env.UPLOAD_DIR,
         },
         jwt: {
-          secret: process.env.JWT_SECRET,
-          expiresIn: process.env.JWT_EXPIRES_IN || '1d',
+          accessSecret: process.env.JWT_ACCESS_SECRET,
+          accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
+          refreshSecret: process.env.JWT_REFRESH_SECRET,
+          refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
         },
       })],
     }),

@@ -18,5 +18,10 @@ export class User extends CommonMongoEntity {
 
   @Column()
   roleId?: ObjectId;
+
+  // 存储 Refresh Token 的哈希值，用于验证和撤销
+  // nullable: 用户登出后置空，表示无有效的 Refresh Token
+  @Column({ nullable: true })
+  currentHashedRefreshToken?: string;
 }
 

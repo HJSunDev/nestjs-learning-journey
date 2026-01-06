@@ -55,9 +55,25 @@ export class UserInfoDto {
   @ApiProperty({ example: '123456' })
   id: string;
 
-  // 更多字段可以根据 User 实体扩展
   @ApiProperty({ example: '2024-01-01' })
   createdAt: Date;
+}
+
+/**
+ * 双 Token 响应结构
+ */
+export class TokensDto {
+  @ApiProperty({ 
+    description: '访问令牌，有效期较短(15m)，用于请求业务接口',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' 
+  })
+  access_token: string;
+
+  @ApiProperty({ 
+    description: '刷新令牌，有效期较长(7d)，仅用于换取新的 Access Token',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' 
+  })
+  refresh_token: string;
 }
 
 

@@ -59,6 +59,12 @@
   - JWT 机制、手机号登录改造、AuthModule 异步配置及跨模块 Provider 导出规范
 - **[023. 全局守卫与 Token 校验 (Global Guard & JWT Strategy)](notes/023-jwt-guard-and-global-auth.md)**
   - Passport 原理、JWT Strategy 实现、全局守卫配置 (APP_GUARD) 及 @Public 装饰器豁免机制
+- **[024. 双 Token 鉴权机制 (Access + Refresh Token)](notes/024-double-token-authentication.md)**
+  - Access/Refresh Token 机制、滑动过期与令牌轮换 (Rotation) 实现
+  - 深度解析 JwtModule、PassportStrategy、AuthGuard 协作原理
+
+
+
 
 ## 📝 维护指南
 
