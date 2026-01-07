@@ -7,6 +7,7 @@ import { UploadModule } from './upload/upload.module';
 import { AuthModule } from './auth/auth.module';
 import { AppConfigModule } from './common/configs/app-config.module';
 import { LoggerModule } from './common/logger/logger.module';
+import { RedisModule } from './common/redis/redis.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 
@@ -14,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
   imports: [
     AppConfigModule, // 全局配置模块，一旦导入，所有其他模块都能直接用 ConfigService
     LoggerModule,    // 全局日志模块
+    RedisModule,     // Redis 模块 (Global)
     // 数据库连接配置
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],

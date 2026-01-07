@@ -67,6 +67,8 @@
   - @Exclude/@Expose 装饰器详解与白名单安全策略
 - **[026. Redis 环境集成与 Docker 编排](notes/026-redis-environment-setup.md)**
   - Redis 7.2 容器化部署、AOF 持久化配置、密码安全策略及数据卷挂载指南
+- **[027. Redis 应用层集成 (Application Integration)](notes/027-redis-application-integration.md)**
+  - ioredis 客户端集成、Global Module 全局封装、Config 动态配置及依赖注入实战
 
 
 

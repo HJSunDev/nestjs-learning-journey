@@ -30,6 +30,11 @@ import * as Joi from 'joi';
         JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
         JWT_REFRESH_SECRET: Joi.string().required(),
         JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
+        // Redis 配置
+        REDIS_HOST: Joi.string().default('localhost'),
+        REDIS_PORT: Joi.number().default(6379),
+        REDIS_PASSWORD: Joi.string().allow('').optional(),
+        REDIS_DB: Joi.number().default(0),
       }),
       // 2. 结构化与类型转换：将扁平的 env 字符串转换为结构化对象，方便在代码中使用
       load: [() => ({
@@ -57,6 +62,12 @@ import * as Joi from 'joi';
           accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
           refreshSecret: process.env.JWT_REFRESH_SECRET,
           refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+        },
+        redis: {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: parseInt(process.env.REDIS_PORT || '6379', 10),
+          password: process.env.REDIS_PASSWORD,
+          db: parseInt(process.env.REDIS_DB || '0', 10),
         },
       })],
     }),
