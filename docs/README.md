@@ -65,6 +65,8 @@
 - **[025. 敏感数据处理最佳实践 (Sensitive Data Handling)](notes/025-sensitive-data-best-practices.md)**
   - 摒弃全局递归拦截器，采用 DTO + ClassSerializerInterceptor 的工业级方案
   - @Exclude/@Expose 装饰器详解与白名单安全策略
+- **[026. Redis 环境集成与 Docker 编排](notes/026-redis-environment-setup.md)**
+  - Redis 7.2 容器化部署、AOF 持久化配置、密码安全策略及数据卷挂载指南
 
 
 
