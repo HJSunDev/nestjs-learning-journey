@@ -3,6 +3,7 @@ import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { setupSwagger } from './common/configs/setup-swagger';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -17,6 +18,22 @@ async function bootstrap() {
 
   // 2. 获取 Winston 实例并替换全局 Logger
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
+
+  // 3. 配置 HTTP 安全头 (Helmet)
+  // 生产环境建议开启 contentSecurityPolicy，但需兼容 Swagger UI 的 inline script/style
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Swagger UI 依赖
+          styleSrc: ["'self'", "'unsafe-inline'"], // Swagger UI 依赖
+          imgSrc: ["'self'", 'data:', 'validator.swagger.io'], // Swagger Validator 图标
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
 
   // 获取 ConfigService 实例
   const configService = app.get(ConfigService);
