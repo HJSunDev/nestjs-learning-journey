@@ -16,6 +16,9 @@ async function bootstrap() {
     bufferLogs: true,
   });
 
+  // 如果应用运行在 Nginx/负载均衡之后，必须开启此配置，否则 RateLimit 获取到的 IP 永远是 127.0.0.1
+  // app.set('trust proxy', 1);
+
   // 2. 获取 Winston 实例并替换全局 Logger
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 

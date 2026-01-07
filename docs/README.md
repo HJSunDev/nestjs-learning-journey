@@ -71,6 +71,9 @@
   - ioredis 客户端集成、Global Module 全局封装、Config 动态配置及依赖注入实战
 - **[028. 基于 Helmet 的 HTTP 安全加固 (HTTP Security Hardening)](notes/028-http-security-helmet.md)**
   - 详解 HTTP 安全头威胁与 Helmet 防护机制，定制 CSP 策略以完美兼容 Swagger UI
+- **[029. 基于 Rate Limiting 的频次控制 (Rate Limiting)](notes/029-rate-limiting.md)**
+  - 核心限流方案选型，使用 @nestjs/throttler + Redis 实现分布式限流与防暴破
+
 
 
 
