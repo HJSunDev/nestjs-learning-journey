@@ -75,6 +75,8 @@
   - 核心限流方案选型，使用 @nestjs/throttler + Redis 实现分布式限流与防暴破
 - **[030. 从 MongoDB 迁移到 PostgreSQL 实战 (Migration Guide)](notes/030-migration-mongo-to-postgres.md)**
   - 架构选型对比、TypeORM 实体层重构、UUID 适配及生产环境日志配置最佳实践
+- **[031. 健康检查与监控 (Health Checks)](notes/031-health-checks.md)**
+  - @nestjs/terminus 集成、自定义 Redis 指示器、K8s 探针设计及运维监控端点实现
 
 
 ## 📝 维护指南

@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { AppConfigModule } from './common/configs/app-config.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { RedisModule } from './common/redis/redis.module';
+import { HealthModule } from './common/health/health.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -64,6 +65,7 @@ import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis'
     RoleModule,
     UploadModule,
     AuthModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [
