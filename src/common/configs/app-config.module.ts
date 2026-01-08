@@ -11,13 +11,12 @@ import * as Joi from 'joi';
       validationSchema: Joi.object({
         APP_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
         APP_PORT: Joi.number().default(3000),
-        // 数据库配置校验
+        // 数据库配置校验 (PostgreSQL)
         DB_HOST: Joi.string().required(),
-        DB_PORT: Joi.number().default(27017),
+        DB_PORT: Joi.number().default(5432),
         DB_NAME: Joi.string().required(),
         DB_USER: Joi.string().allow('').optional(),
         DB_PASS: Joi.string().allow('').optional(),
-        DB_AUTH_SOURCE: Joi.string().default('admin'),
         DB_SYNCHRONIZE: Joi.boolean().default(false),
         DB_LOGGING: Joi.boolean().default(false),
         // 日志配置
@@ -42,11 +41,10 @@ import * as Joi from 'joi';
         port: parseInt(process.env.APP_PORT || '3000', 10),
         database: {
           host: process.env.DB_HOST,
-          port: parseInt(process.env.DB_PORT || '27017', 10),
+          port: parseInt(process.env.DB_PORT || '5432', 10),
           name: process.env.DB_NAME,
           user: process.env.DB_USER,
           pass: process.env.DB_PASS,
-          authSource: process.env.DB_AUTH_SOURCE,
           synchronize: process.env.DB_SYNCHRONIZE === 'true',
           logging: process.env.DB_LOGGING === 'true',
         },

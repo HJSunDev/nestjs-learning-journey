@@ -21,9 +21,8 @@ export class AuthService {
       throw new NotFoundException('用户不存在');
     }
 
-    // 转换为 UserInfoDto，去除敏感信息
     return {
-      id: user._id.toString(),
+      id: user.id,
       name: user.name,
       phoneNumber: user.phoneNumber ?? '',
       createdAt: user.createdAt
@@ -47,8 +46,8 @@ export class AuthService {
     });
 
     // 生成双 Token 并存储 Refresh Token 哈希
-    const tokens = await this.getTokens(newUser._id.toString(), newUser.phoneNumber);
-    await this.updateRefreshTokenHash(newUser._id.toString(), tokens.refresh_token);
+    const tokens = await this.getTokens(newUser.id, newUser.phoneNumber);
+    await this.updateRefreshTokenHash(newUser.id, tokens.refresh_token);
     return tokens;
   }
 
@@ -64,8 +63,8 @@ export class AuthService {
     }
 
     // 生成双 Token 并存储 Refresh Token 哈希
-    const tokens = await this.getTokens(user._id.toString(), user.phoneNumber);
-    await this.updateRefreshTokenHash(user._id.toString(), tokens.refresh_token);
+    const tokens = await this.getTokens(user.id, user.phoneNumber);
+    await this.updateRefreshTokenHash(user.id, tokens.refresh_token);
     return tokens;
   }
 
@@ -144,5 +143,6 @@ export class AuthService {
     await this.userService.updateRefreshToken(userId, hashedRefreshToken);
   }
 }
+
 
 

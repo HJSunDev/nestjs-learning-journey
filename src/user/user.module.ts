@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { HashingModule } from '../common/hashing/hashing.module';
-import { User } from './entities/user.mongo.entity';
+import { User } from './entities/user.entity';
 
 @Module({
   imports: [

@@ -1,23 +1,26 @@
 import {
-  ObjectIdColumn,
-  ObjectId,
+  PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
   VersionColumn,
 } from 'typeorm';
 
-export abstract class CommonMongoEntity {
-  @ObjectIdColumn()
-  _id: ObjectId;
+/**
+ * 通用实体基类
+ * 提供所有实体共享的字段：UUID 主键、时间戳、软删除、乐观锁
+ */
+export abstract class CommonEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-  @CreateDateColumn({ type: 'timestamp' })
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamp' })
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 
-  @DeleteDateColumn({ type: 'timestamp' })
+  @DeleteDateColumn({ type: 'timestamptz' })
   deletedAt: Date;
 
   /**

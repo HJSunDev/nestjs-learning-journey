@@ -73,10 +73,8 @@
   - 详解 HTTP 安全头威胁与 Helmet 防护机制，定制 CSP 策略以完美兼容 Swagger UI
 - **[029. 基于 Rate Limiting 的频次控制 (Rate Limiting)](notes/029-rate-limiting.md)**
   - 核心限流方案选型，使用 @nestjs/throttler + Redis 实现分布式限流与防暴破
-
-
-
-
+- **[030. 从 MongoDB 迁移到 PostgreSQL 实战 (Migration Guide)](notes/030-migration-mongo-to-postgres.md)**
+  - 架构选型对比、TypeORM 实体层重构、UUID 适配及生产环境日志配置最佳实践
 
 
 ## 📝 维护指南

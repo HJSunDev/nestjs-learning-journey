@@ -1,8 +1,8 @@
 import { Entity, Column } from 'typeorm';
-import { CommonMongoEntity } from '../../common/entities/common.mongo.entity';
+import { CommonEntity } from '../../common/entities/common.entity';
 
 @Entity('roles')
-export class Role extends CommonMongoEntity {
+export class Role extends CommonEntity {
   @Column({ unique: true })
   name: string;
 
@@ -14,8 +14,10 @@ export class Role extends CommonMongoEntity {
    *   "user": ["read", "write"],
    *   "order": ["read"]
    * }
+   * 
+   * 使用 PostgreSQL jsonb 类型，支持索引和复杂查询
    */
-  @Column()
+  @Column({ type: 'jsonb', default: {} })
   permissions: Record<string, string[]>;
 }
 

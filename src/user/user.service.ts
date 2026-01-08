@@ -1,12 +1,11 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ObjectId } from 'mongodb';
+import { validate as isUUID } from 'uuid';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { HashingService } from '../common/hashing/hashing.service';
-import { User } from './entities/user.mongo.entity';
-
+import { User } from './entities/user.entity';
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 
 @Injectable()
@@ -25,7 +24,7 @@ export class UserService {
 
   async create(createUserDto: CreateUserDto) {
     // 2. 记录业务日志
-    this.logger.log(`开始创建用户: ${createUserDto.email}`);
+    this.logger.log(`开始创建用户: ${createUserDto.email || createUserDto.phoneNumber}`);
     
     // 使用共享模块 HashingService 对密码进行加密
     const hashedPassword = await this.hashingService.hash(createUserDto.password);
@@ -43,7 +42,7 @@ export class UserService {
     // 它会返回保存到数据库后的完整对象（包括自动生成的 _id）
     const savedUser = await this.userRepository.save(newUser);
     
-    this.logger.log(`用户创建成功, ID: ${savedUser._id}`);
+    this.logger.log(`用户创建成功, ID: ${savedUser.id}`);
     
     return savedUser;
   }
@@ -71,14 +70,12 @@ export class UserService {
   }
 
   async findOne(id: string) {
-    // ObjectId 校验：MongoDB 的 ID 是特定格式的，如果格式不对（比如长度不够），直接查询会报错
-    if (!ObjectId.isValid(id)) {
-      throw new NotFoundException(`Invalid ID format`);
+    // UUID 格式校验：防止无效 ID 导致数据库层异常
+    if (!isUUID(id)) {
+      throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    // findOneBy(): 根据条件查询单条记录。
-    // 注意：MongoDB 中主键是 _id，且类型是 ObjectId 对象，不能直接传字符串
-    const user = await this.userRepository.findOneBy({ _id: new ObjectId(id) });
+    const user = await this.userRepository.findOneBy({ id });
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
@@ -90,8 +87,8 @@ export class UserService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    if (!ObjectId.isValid(id)) {
-      throw new NotFoundException(`Invalid ID format`);
+    if (!isUUID(id)) {
+      throw new NotFoundException(`User with ID ${id} not found`);
     }
 
     // 1. 先查询是否存在，确保我们在更新一个有效用户
@@ -116,8 +113,8 @@ export class UserService {
   }
 
   async remove(id: string) {
-    if (!ObjectId.isValid(id)) {
-      throw new NotFoundException(`Invalid ID format`);
+    if (!isUUID(id)) {
+      throw new NotFoundException(`User with ID ${id} not found`);
     }
     // softDelete(): 软删除
     // 相当于 UPDATE users SET deletedAt = NOW() WHERE id = ...
@@ -135,8 +132,8 @@ export class UserService {
    * @param hashedRefreshToken 哈希后的 Refresh Token，传 null 表示清除（登出场景）
    */
   async updateRefreshToken(userId: string, hashedRefreshToken: string | null): Promise<void> {
-    if (!ObjectId.isValid(userId)) {
-      throw new NotFoundException(`Invalid ID format`);
+    if (!isUUID(userId)) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
     }
     // 登出时传入 null，存储空字符串以明确标识无有效 Token
     // 验证时检查字段是否存在且非空
@@ -149,13 +146,13 @@ export class UserService {
    * 根据 ID 查询用户，包含 Refresh Token 哈希字段（用于 Token 刷新校验）
    */
   async findOneWithRefreshToken(id: string): Promise<User | null> {
-    if (!ObjectId.isValid(id)) {
+    if (!isUUID(id)) {
       return null;
     }
     // 由于 currentHashedRefreshToken 可能被 select: false 隐藏，这里显式查询
     return this.userRepository.findOne({
-      where: { _id: new ObjectId(id) },
-      select: ['_id', 'name', 'phoneNumber', 'currentHashedRefreshToken'],
+      where: { id },
+      select: ['id', 'name', 'phoneNumber', 'currentHashedRefreshToken'],
     });
   }
 }

@@ -39,7 +39,7 @@ import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis'
         }),
       }),
     }),
-    // 数据库连接配置
+    // 数据库连接配置 (PostgreSQL)
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       // useFactory 返回的这个对象，就是 TypeORM 的标准 DataSourceOptions 接口
@@ -47,17 +47,16 @@ import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis'
       useFactory: (configService: ConfigService) => {
         const dbConfig = configService.get('database');
         return {
-          type: 'mongodb',
+          type: 'postgres',
           host: dbConfig.host,
           port: dbConfig.port,
           username: dbConfig.user,
           password: dbConfig.pass,
           database: dbConfig.name,
-          authSource: dbConfig.authSource, 
           autoLoadEntities: true, // 自动加载通过 forFeature 注册的实体，无需手动配置 entities 路径
-          synchronize: dbConfig.synchronize, // MongoDB 只有在 v3 驱动下才完全支持 synchronize，通常生产环境建议设为 false
-          logging: dbConfig.logging, // 是否打印数据库操作日志
-          // useUnifiedTopology: true, // 已废弃：自 MongoDB Driver 4.0.0 起，useUnifiedTopology 选项已被移除且不再生效，配置会出现警告信息
+          synchronize: dbConfig.synchronize, // 是否自动同步数据库结构 (开发环境建议开启，生产环境建议关闭)
+          // 生产环境强制仅记录错误，开发环境依据配置决定（通常开启以调试 SQL）
+          logging: configService.get('env') === 'production' ? ['error', 'warn'] : dbConfig.logging, 
         };
       },
     }),

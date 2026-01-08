@@ -57,6 +57,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Database data
 mongo-data/
+postgres-data/
 redis-data/
 
 # AI Context Mirror (Local Only)
