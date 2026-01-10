@@ -79,6 +79,8 @@
   - @nestjs/terminus 集成、自定义 Redis 指示器、K8s 探针设计及运维监控端点实现
 - **[032. 文件存储架构与抽象层设计 (Storage Abstraction)](notes/032-storage-abstraction-and-design.md)**
   - 遵循 DIP 原则的 IStorageService 设计，策略模式实现 Local/OSS 驱动热切换
+- **[033. 数据库迁移系统 (TypeORM Migrations)](notes/033-database-migrations.md)**
+  - 生产级数据库结构管理，synchronize 的风险、Migration 工作机制及 CLI 配置实战
 
 
 ## 📝 维护指南
