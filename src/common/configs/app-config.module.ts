@@ -22,8 +22,10 @@ import * as Joi from 'joi';
         // 日志配置
         LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly').default('info'),
         LOG_ON_CONSOLE: Joi.boolean().default(true),
-        // 文件上传配置
-        UPLOAD_DIR: Joi.string().allow('').optional(),
+        // 文件存储配置
+        STORAGE_DRIVER: Joi.string().valid('local', 'oss').default('local'),
+        STORAGE_LOCAL_DIR: Joi.string().allow('').optional(),
+        STORAGE_LOCAL_PREFIX: Joi.string().default('/static/upload'),
         // JWT 双 Token 配置
         JWT_ACCESS_SECRET: Joi.string().required(),
         JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
@@ -52,8 +54,19 @@ import * as Joi from 'joi';
           level: process.env.LOG_LEVEL,
           onConsole: process.env.LOG_ON_CONSOLE === 'true',
         },
-        upload: {
-          dir: process.env.UPLOAD_DIR,
+        storage: {
+          driver: process.env.STORAGE_DRIVER || 'local',
+          local: {
+            dir: process.env.STORAGE_LOCAL_DIR || 'static/upload',
+            prefix: process.env.STORAGE_LOCAL_PREFIX || '/static/upload',
+          },
+          // OSS 配置预留
+          oss: {
+            region: process.env.STORAGE_OSS_REGION,
+            bucket: process.env.STORAGE_OSS_BUCKET,
+            accessKeyId: process.env.STORAGE_OSS_ACCESS_KEY_ID,
+            accessKeySecret: process.env.STORAGE_OSS_ACCESS_KEY_SECRET,
+          },
         },
         jwt: {
           accessSecret: process.env.JWT_ACCESS_SECRET,

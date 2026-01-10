@@ -41,17 +41,22 @@ async function bootstrap() {
   // 获取 ConfigService 实例
   const configService = app.get(ConfigService);
 
-  // 配置静态资源服务 (图床)
-  // 1. 获取配置的路径，默认为 'static/upload'
-  const configUploadDir =
-    configService.get<string>('upload.dir') || 'static/upload';
+  // 配置静态资源服务 (仅本地存储模式需要)
+  // 当使用 OSS等云存储时，文件通过 CDN 直接访问，无需此配置
+  const storageDriver = configService.get<string>('storage.driver') || 'local';
 
-  // 2. 解析为绝对路径 (支持相对路径和绝对路径的自动归一化)
-  const uploadDir = resolve(process.cwd(), configUploadDir);
+  if (storageDriver === 'local') {
+    // 获取本地存储配置
+    const localDir = configService.get<string>('storage.local.dir') || 'static/upload';
+    const localPrefix = configService.get<string>('storage.local.prefix') || '/static/upload';
 
-  app.useStaticAssets(uploadDir, {
-    prefix: '/static/upload', // 虚拟路径前缀，访问时 http://localhost:3000/static/upload/xxx.jpg
-  });
+    // 解析为绝对路径
+    const uploadDir = resolve(process.cwd(), localDir);
+
+    app.useStaticAssets(uploadDir, {
+      prefix: localPrefix, // 虚拟路径前缀，访问时 http://localhost:3000/static/upload/xxx.jpg
+    });
+  }
 
   // 注册全局异常过滤器
   app.useGlobalFilters(new HttpExceptionFilter());
