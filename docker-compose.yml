@@ -31,6 +31,22 @@ services:
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
 
+  # === pgAdmin 服务 (Web管理端) ===
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: nest-journey-pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@admin.com"
+      PGADMIN_DEFAULT_PASSWORD: "admin"
+    ports:
+      - "5050:80"
+    # 持久化配置，避免每次重启都要重新添加服务器连接
+    volumes:
+      - ./pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+
   # === Redis 服务 ===
   redis:
     # 镜像：使用官方 Redis 7.2 版本 (目前较新的稳定版)
@@ -55,3 +71,16 @@ services:
     # 数据挂载：把 Redis 数据存在当前目录下的 ./redis-data 文件夹
     volumes:
       - ./redis-data:/data
+
+  # === Redis Insight 服务 (Web管理端) ===
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: nest-journey-redis-insight
+    restart: always
+    ports:
+      - "5540:5540"
+    # 持久化配置，避免每次重启都要重新添加 Redis 连接
+    volumes:
+      - ./redis-insight-data:/data
+    depends_on:
+      - redis

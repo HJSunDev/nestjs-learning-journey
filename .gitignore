@@ -60,6 +60,10 @@ mongo-data/
 postgres-data/
 redis-data/
 
+# Database admin tools data
+pgadmin-data/
+redis-insight-data/
+
 # AI Context Mirror (Local Only)
 env.ai
 

@@ -81,6 +81,8 @@
   - 遵循 DIP 原则的 IStorageService 设计，策略模式实现 Local/OSS 驱动热切换
 - **[033. 数据库迁移系统 (TypeORM Migrations)](notes/033-database-migrations.md)**
   - 生产级数据库结构管理，synchronize 的风险、Migration 工作机制及 CLI 配置实战
+- **[034. 数据库可视化管理工具集成 (Database Visualization Tools)](notes/034-database-visualization-tools.md)**
+  - Docker 集成 pgAdmin/Redis Insight、开发与生产环境访问策略及工具使用指引
 
 
 ## 📝 维护指南
