@@ -14,6 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import { TypeOrmLogger } from './common/logger/typeorm-logger';
 
 @Module({
   imports: [
@@ -56,8 +57,15 @@ import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis'
           database: dbConfig.name,
           autoLoadEntities: true, // 自动加载通过 forFeature 注册的实体，无需手动配置 entities 路径
           synchronize: dbConfig.synchronize, // 是否自动同步数据库结构 (开发环境建议开启，生产环境建议关闭)
-          // 生产环境强制仅记录错误，开发环境依据配置决定（通常开启以调试 SQL）
-          logging: configService.get('env') === 'production' ? ['error', 'warn'] : dbConfig.logging, 
+          
+          // 使用自定义 Logger 接管 TypeORM 日志
+          logger: new TypeOrmLogger(),
+          // 策略控制：
+          // 1. 如果 env 中 DB_LOGGING=true，则记录所有操作('all')。
+          //    注意：此时具体是否打印，还取决于全局 LOG_LEVEL。
+          //    例如 SQL 是 debug 级别，如果 LOG_LEVEL=info，则依然看不见 SQL。
+          // 2. 如果 env 中 DB_LOGGING=false，则仅记录错误和警告(['error', 'warn'])。
+          logging: dbConfig.logging ? 'all' : ['error', 'warn'],
         };
       },
     }),

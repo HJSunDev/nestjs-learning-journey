@@ -73,6 +73,27 @@ export class UserService {
 }
 ```
 
+### 场景 C: 集成 TypeORM 日志 (Database Integration)
+
+**问题背景**：TypeORM 默认使用 `console.log` 直接输出 SQL，完全绕过了我们的 Winston 日志系统。这导致：
+- SQL 日志格式与业务日志不统一
+- SQL 日志不会被写入 `logs/` 文件夹
+- 无法通过 `LOG_LEVEL` 统一控制
+
+**解决方案**：创建自定义 Logger 适配器，实现 TypeORM 的 `Logger` 接口，内部调用 NestJS 的 `Logger`（底层已被 Winston 接管）。
+
+**核心设计 - 日志级别映射策略**：
+| TypeORM 动作 | 映射级别 | 说明 |
+| :--- | :--- | :--- |
+| 普通查询 (`logQuery`) | `debug` | 生产环境 `LOG_LEVEL=info` 时自动屏蔽，排查时改为 `debug` 即可看到 |
+| 慢查询 (`logQuerySlow`) | `warn` | 生产环境必须记录，用于性能分析 |
+| 错误 (`logQueryError`) | `error` | 生产环境必须记录，用于故障追溯 |
+
+**最佳实践收益**：
+- **生产安静**：`LOG_LEVEL=info` 时，海量普通 SQL 被自动过滤。
+- **排查灵活**：遇到 Bug 时，只需临时修改 `LOG_LEVEL=debug`（无需改代码），全量 SQL 立即浮现。
+- **统一归档**：SQL 日志也会被 Winston 自动轮转和压缩到 `logs/` 目录。
+
 ## 3. 深度原理与机制 (Under the Hood)
 
 - **Logger 替换机制**:
@@ -114,8 +135,7 @@ export class UserService {
     - 比喻：**"招聘入职"**。把 Winston 招进公司，让他待命。
 
 2.  **main.ts 替换 (负责"任命")**:
-    - 作用：告诉 NestJS 框架，“请把你的御用 Logger 换成容器里这个 Winston 实例”。
-    - 比喻：**"正式任命"**。CEO 宣布：“从今天起，所有会议记录由 Winston 负责，不再由前台兼职（内置 ConsoleLogger）负责”。
+    - 作用：告诉 NestJS 框架，"请把你的御用 Logger 换成容器里这个 Winston 实例"。
 
 > **思考**: 必须替换全局 Logger 吗？
 > 
@@ -162,4 +182,121 @@ async function bootstrap() {
   
   // ... 其他逻辑
 }
+```
+
+### Step 4: 集成 TypeORM 日志
+
+**这一步在干什么**: 创建适配器类，将数据库 SQL 日志桥接到 Winston 系统，实现统一管理。
+
+**4.1 新建适配器文件**: `src/common/logger/typeorm-logger.ts`
+
+```typescript
+import { Logger as NestLogger } from '@nestjs/common';
+import { Logger as ITypeOrmLogger, QueryRunner } from 'typeorm';
+
+/**
+ * 自定义 TypeORM 日志适配器
+ * 
+ * 作用：将 TypeORM 的原生日志（直接 console.log）桥接到 NestJS 的统一 Logger 系统中。
+ * 优势：
+ * 1. 统一格式：SQL 日志也遵循 JSON/Winston 格式
+ * 2. 统一存储：SQL 日志会自动进入 logs/ 文件夹
+ * 3. 灵活级别：普通 SQL 使用 debug 级别，生产环境可以通过调整全局 LOG_LEVEL 来决定是否记录
+ */
+export class TypeOrmLogger implements ITypeOrmLogger {
+  // 使用 NestJS 的 Logger，上下文命名为 'TypeORM'
+  private readonly logger = new NestLogger('TypeORM');
+
+  /**
+   * 记录普通查询
+   * 映射级别: debug (开发环境可见，生产环境通常 info 级别不可见)
+   */
+  logQuery(query: string, parameters?: any[], queryRunner?: QueryRunner) {
+    const params = parameters && parameters.length ? ` -- PARAMETERS: ${JSON.stringify(parameters)}` : '';
+    this.logger.debug(`${query}${params}`);
+  }
+
+  /**
+   * 记录执行失败的查询
+   * 映射级别: error
+   */
+  logQueryError(error: string | Error, query: string, parameters?: any[], queryRunner?: QueryRunner) {
+    const params = parameters && parameters.length ? ` -- PARAMETERS: ${JSON.stringify(parameters)}` : '';
+    this.logger.error(`${query}${params} -- ERROR: ${error}`);
+  }
+
+  /**
+   * 记录执行缓慢的查询
+   * 映射级别: warn
+   */
+  logQuerySlow(time: number, query: string, parameters?: any[], queryRunner?: QueryRunner) {
+    const params = parameters && parameters.length ? ` -- PARAMETERS: ${JSON.stringify(parameters)}` : '';
+    this.logger.warn(`Time: ${time}ms -- ${query}${params}`);
+  }
+
+  /**
+   * 记录 Schema 构建/迁移日志
+   * 映射级别: log (info)
+   */
+  logSchemaBuild(message: string, queryRunner?: QueryRunner) {
+    this.logger.log(message);
+  }
+
+  /**
+   * 记录迁移运行日志
+   * 映射级别: log (info)
+   */
+  logMigration(message: string, queryRunner?: QueryRunner) {
+    this.logger.log(message);
+  }
+
+  /**
+   * 记录普通日志
+   * 映射级别: log (info)
+   */
+  log(level: 'log' | 'info' | 'warn', message: any, queryRunner?: QueryRunner) {
+    switch (level) {
+      case 'log':
+      case 'info':
+        this.logger.log(message);
+        break;
+      case 'warn':
+        this.logger.warn(message);
+        break;
+    }
+  }
+}
+```
+
+**4.2 配置 AppModule**: 在 `TypeOrmModule.forRootAsync` 中应用适配器
+
+```typescript
+// src/app.module.ts
+import { TypeOrmLogger } from './common/logger/typeorm-logger';
+
+@Module({
+  imports: [
+    // ...
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const dbConfig = configService.get('database');
+        return {
+          type: 'postgres',
+          // ... 其他数据库连接配置
+          
+          // 使用自定义 Logger 接管 TypeORM 日志
+          logger: new TypeOrmLogger(),
+          // 策略控制：
+          // 1. 如果 env 中 DB_LOGGING=true，则记录所有操作('all')。
+          //    注意：此时具体是否打印，还取决于全局 LOG_LEVEL。
+          //    例如 SQL 是 debug 级别，如果 LOG_LEVEL=info，则依然看不见 SQL。
+          // 2. 如果 env 中 DB_LOGGING=false，则仅记录错误和警告(['error', 'warn'])。
+          logging: dbConfig.logging ? 'all' : ['error', 'warn'],
+        };
+      },
+    }),
+  ],
+})
+export class AppModule {}
 ```
