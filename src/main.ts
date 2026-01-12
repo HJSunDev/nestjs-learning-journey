@@ -41,6 +41,34 @@ async function bootstrap() {
   // 获取 ConfigService 实例
   const configService = app.get(ConfigService);
 
+  // 4. 配置 CORS 跨域策略 (从配置文件读取)
+  const corsConfig = configService.get('cors');
+  app.enableCors({
+    // 白名单校验函数：只允许配置中的域名访问
+    origin: (origin, callback) => {
+      // 允许无 origin 的请求 (服务器间调用、curl、Postman 等)
+      if (!origin) {
+        return callback(null, true);
+      }
+      // 检查是否在白名单中
+      if (corsConfig.origins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
+    // 允许的 HTTP 方法
+    methods: corsConfig.methods,
+    // 允许的请求头 (Authorization 用于 JWT, X-Requested-With 用于 AJAX 识别)
+    allowedHeaders: corsConfig.allowedHeaders,
+    // 允许浏览器读取的响应头
+    exposedHeaders: corsConfig.exposedHeaders,
+    // 允许携带凭证 (Cookie, Authorization Header)
+    credentials: corsConfig.credentials,
+    // 预检请求 (OPTIONS) 缓存时间：24 小时，减少 preflight 请求次数
+    maxAge: corsConfig.maxAge,
+  });
+
   // 配置静态资源服务 (仅本地存储模式需要)
   // 当使用 OSS等云存储时，文件通过 CDN 直接访问，无需此配置
   const storageDriver = configService.get<string>('storage.driver') || 'local';
@@ -74,7 +102,7 @@ async function bootstrap() {
   // 集成 Swagger 文档
   setupSwagger(app);
 
-  const port = configService.get<number>('port') ?? 3000;
+  const port = configService.get<number>('app.port') ?? 3000;
   await app.listen(port);
 }
 bootstrap();

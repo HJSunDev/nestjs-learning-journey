@@ -1,86 +1,62 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import * as Joi from 'joi';
+import { configurations } from './config';
 
+/**
+ * 全局配置模块
+ * 
+ * 架构设计：
+ * 1. 敏感信息 → 从环境变量读取 (validationSchema 校验)
+ * 2. 业务配置 → 在配置文件中定义默认值 (config/*.config.ts)
+ * 3. 环境覆盖 → 配置文件中可选读取环境变量覆盖默认值
+ */
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      // 1. 强校验：确保 .env 文件中必须存在某些变量，且格式正确
+      
+      // 加载所有配置文件 (使用 registerAs 创建的命名空间配置)
+      load: configurations,
+      
+      // 环境变量校验：只校验必须从环境变量提供的敏感信息
       validationSchema: Joi.object({
-        APP_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+        // === 应用基础 ===
+        APP_ENV: Joi.string()
+          .valid('development', 'production', 'test')
+          .default('development'),
         APP_PORT: Joi.number().default(3000),
-        // 数据库配置校验 (PostgreSQL)
+        
+        // === 数据库 (敏感) ===
         DB_HOST: Joi.string().required(),
         DB_PORT: Joi.number().default(5432),
         DB_NAME: Joi.string().required(),
         DB_USER: Joi.string().allow('').optional(),
         DB_PASS: Joi.string().allow('').optional(),
-        DB_SYNCHRONIZE: Joi.boolean().default(false),
-        DB_LOGGING: Joi.boolean().default(false),
-        // 日志配置
-        LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly').default('info'),
-        LOG_ON_CONSOLE: Joi.boolean().default(true),
-        // 文件存储配置
-        STORAGE_DRIVER: Joi.string().valid('local', 'oss').default('local'),
-        STORAGE_LOCAL_DIR: Joi.string().allow('').optional(),
-        STORAGE_LOCAL_PREFIX: Joi.string().default('/static/upload'),
-        // JWT 双 Token 配置
-        JWT_ACCESS_SECRET: Joi.string().required(),
-        JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
-        JWT_REFRESH_SECRET: Joi.string().required(),
-        JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
-        // Redis 配置
+        
+        // === Redis (敏感) ===
         REDIS_HOST: Joi.string().default('localhost'),
         REDIS_PORT: Joi.number().default(6379),
         REDIS_PASSWORD: Joi.string().allow('').optional(),
-        REDIS_DB: Joi.number().default(0),
+        
+        // === JWT (敏感) ===
+        JWT_ACCESS_SECRET: Joi.string().required(),
+        JWT_REFRESH_SECRET: Joi.string().required(),
+        
+        // === 可选覆盖项 (非敏感，有默认值) ===
+        DB_SYNCHRONIZE: Joi.boolean().optional(),
+        DB_LOGGING: Joi.boolean().optional(),
+        REDIS_DB: Joi.number().optional(),
+        JWT_ACCESS_EXPIRES_IN: Joi.string().optional(),
+        JWT_REFRESH_EXPIRES_IN: Joi.string().optional(),
+        LOG_LEVEL: Joi.string().optional(),
+        LOG_ON_CONSOLE: Joi.boolean().optional(),
+        STORAGE_DRIVER: Joi.string().valid('local', 'oss').optional(),
+        STORAGE_LOCAL_DIR: Joi.string().optional(),
+        STORAGE_LOCAL_PREFIX: Joi.string().optional(),
+        CORS_ORIGINS: Joi.string().optional(),
       }),
-      // 2. 结构化与类型转换：将扁平的 env 字符串转换为结构化对象，方便在代码中使用
-      load: [() => ({
-        env: process.env.APP_ENV,
-        port: parseInt(process.env.APP_PORT || '3000', 10),
-        database: {
-          host: process.env.DB_HOST,
-          port: parseInt(process.env.DB_PORT || '5432', 10),
-          name: process.env.DB_NAME,
-          user: process.env.DB_USER,
-          pass: process.env.DB_PASS,
-          synchronize: process.env.DB_SYNCHRONIZE === 'true',
-          logging: process.env.DB_LOGGING === 'true',
-        },
-        logger: {
-          level: process.env.LOG_LEVEL,
-          onConsole: process.env.LOG_ON_CONSOLE === 'true',
-        },
-        storage: {
-          driver: process.env.STORAGE_DRIVER || 'local',
-          local: {
-            dir: process.env.STORAGE_LOCAL_DIR || 'static/upload',
-            prefix: process.env.STORAGE_LOCAL_PREFIX || '/static/upload',
-          },
-          // OSS 配置预留
-          oss: {
-            region: process.env.STORAGE_OSS_REGION,
-            bucket: process.env.STORAGE_OSS_BUCKET,
-            accessKeyId: process.env.STORAGE_OSS_ACCESS_KEY_ID,
-            accessKeySecret: process.env.STORAGE_OSS_ACCESS_KEY_SECRET,
-          },
-        },
-        jwt: {
-          accessSecret: process.env.JWT_ACCESS_SECRET,
-          accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
-          refreshSecret: process.env.JWT_REFRESH_SECRET,
-          refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
-        },
-        redis: {
-          host: process.env.REDIS_HOST || 'localhost',
-          port: parseInt(process.env.REDIS_PORT || '6379', 10),
-          password: process.env.REDIS_PASSWORD,
-          db: parseInt(process.env.REDIS_DB || '0', 10),
-        },
-      })],
     }),
   ],
   exports: [ConfigModule],
