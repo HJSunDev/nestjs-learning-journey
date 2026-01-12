@@ -83,6 +83,8 @@
   - 生产级数据库结构管理，synchronize 的风险、Migration 工作机制及 CLI 配置实战
 - **[034. 数据库可视化管理工具集成 (Database Visualization Tools)](notes/034-database-visualization-tools.md)**
   - Docker 集成 pgAdmin/Redis Insight、开发与生产环境访问策略及工具使用指引
+- **[035. Refresh Token 存储迁移：从数据库到 Redis](notes/035-redis-token-storage.md)**
+  - 基于 DIP 原则的 Token 存储抽象、Redis TTL 自动过期机制及生产级 Key 设计规范
 
 
 ## 📝 维护指南

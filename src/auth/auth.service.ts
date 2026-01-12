@@ -1,9 +1,11 @@
-import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Inject, UnauthorizedException, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserService } from '../user/user.service';
 import { HashingService } from '../common/hashing/hashing.service';
 import { LoginDTO, RegisterDTO, UserInfoDto, TokensDto } from './dto/auth.dto';
+import type { ITokenStorageService } from './token-storage';
+import { TOKEN_STORAGE_SERVICE, parseExpiresInToSeconds } from './token-storage';
 
 @Injectable()
 export class AuthService {
@@ -12,6 +14,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly hashingService: HashingService,
     private readonly configService: ConfigService,
+    @Inject(TOKEN_STORAGE_SERVICE)
+    private readonly tokenStorage: ITokenStorageService,
   ) {}
 
   async info(id: string): Promise<UserInfoDto> {
@@ -45,9 +49,9 @@ export class AuthService {
       phoneNumber: registerDto.phoneNumber,
     });
 
-    // 生成双 Token 并存储 Refresh Token 哈希
+    // 生成双 Token 并存储 Refresh Token 哈希到 Redis
     const tokens = await this.getTokens(newUser.id, newUser.phoneNumber);
-    await this.updateRefreshTokenHash(newUser.id, tokens.refresh_token);
+    await this.storeRefreshToken(newUser.id, tokens.refresh_token);
     return tokens;
   }
 
@@ -62,9 +66,9 @@ export class AuthService {
       throw new UnauthorizedException('手机号或密码错误');
     }
 
-    // 生成双 Token 并存储 Refresh Token 哈希
+    // 生成双 Token 并存储 Refresh Token 哈希到 Redis
     const tokens = await this.getTokens(user.id, user.phoneNumber);
-    await this.updateRefreshTokenHash(user.id, tokens.refresh_token);
+    await this.storeRefreshToken(user.id, tokens.refresh_token);
     return tokens;
   }
 
@@ -74,37 +78,39 @@ export class AuthService {
    * @param refreshToken 原始 Refresh Token 字符串
    */
   async refreshTokens(userId: string, refreshToken: string): Promise<TokensDto> {
+    // 从 Redis 获取存储的哈希值
+    const storedHash = await this.tokenStorage.get(userId);
     
-    const user = await this.userService.findOneWithRefreshToken(userId);
-    
-    // 用户不存在或 Refresh Token 已被清除（已登出）
-    // 空字符串表示用户已登出
-    if (!user || !user.currentHashedRefreshToken || user.currentHashedRefreshToken === '') {
+    // Token 不存在（已登出或已过期）
+    if (!storedHash) {
       throw new ForbiddenException('访问被拒绝');
     }
 
-    // 比对传入的 Token 与数据库中的哈希值
-    const isRefreshTokenValid = await this.hashingService.compare(
-      refreshToken,
-      user.currentHashedRefreshToken,
-    );
+    // 比对传入的 Token 与 Redis 中的哈希值
+    const isRefreshTokenValid = await this.hashingService.compare(refreshToken, storedHash);
 
     if (!isRefreshTokenValid) {
       throw new ForbiddenException('Refresh Token 无效');
     }
 
-    // 签发新的双 Token 并更新数据库中的哈希
+    // 获取用户信息用于生成新 Token
+    const user = await this.userService.findOne(userId);
+    if (!user) {
+      throw new ForbiddenException('用户不存在');
+    }
+
+    // 签发新的双 Token 并更新 Redis 中的哈希（Token 轮换）
     const tokens = await this.getTokens(userId, user.phoneNumber);
-    await this.updateRefreshTokenHash(userId, tokens.refresh_token);
+    await this.storeRefreshToken(userId, tokens.refresh_token);
     return tokens;
   }
 
   /**
-   * 用户登出，清除数据库中的 Refresh Token 哈希
+   * 用户登出，从 Redis 删除 Refresh Token
    * 即使 Token 未过期，也无法再用于刷新
    */
   async logout(userId: string): Promise<void> {
-    await this.userService.updateRefreshToken(userId, null);
+    await this.tokenStorage.delete(userId);
   }
 
   /**
@@ -135,12 +141,16 @@ export class AuthService {
   }
 
   /**
-   * 将 Refresh Token 哈希后存入数据库
-   * 存储哈希而非原文，防止数据库泄露时 Token 被直接利用
+   * 将 Refresh Token 哈希后存入 Redis
+   * 存储哈希而非原文，防止 Redis 数据泄露时 Token 被直接利用
+   * TTL 与 JWT 过期时间保持一致，实现自动清理
    */
-  private async updateRefreshTokenHash(userId: string, refreshToken: string): Promise<void> {
-    const hashedRefreshToken = await this.hashingService.hash(refreshToken);
-    await this.userService.updateRefreshToken(userId, hashedRefreshToken);
+  private async storeRefreshToken(userId: string, refreshToken: string): Promise<void> {
+    const hashedToken = await this.hashingService.hash(refreshToken);
+    const expiresIn = this.configService.get<string>('jwt.refreshExpiresIn') ?? '7d';
+    const ttlSeconds = parseExpiresInToSeconds(expiresIn);
+    
+    await this.tokenStorage.set(userId, hashedToken, ttlSeconds);
   }
 }
 

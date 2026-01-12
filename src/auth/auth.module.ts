@@ -10,6 +10,7 @@ import { HashingModule } from '../common/hashing/hashing.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { TOKEN_STORAGE_SERVICE, RedisTokenStorageService } from './token-storage';
 
 @Module({
   imports: [
@@ -33,6 +34,11 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
     AuthService, 
     JwtStrategy,        // Access Token 策略
     JwtRefreshStrategy, // Refresh Token 策略
+    // Token 存储服务：基于接口注入，便于切换实现
+    {
+      provide: TOKEN_STORAGE_SERVICE,
+      useClass: RedisTokenStorageService,
+    },
     {
       provide: APP_GUARD, // 注册全局 Guard
       useClass: JwtAuthGuard,

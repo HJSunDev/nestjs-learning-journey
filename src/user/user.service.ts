@@ -126,33 +126,4 @@ export class UserService {
     return { deleted: true };
   }
 
-  /**
-   * 更新用户的 Refresh Token 哈希值
-   * @param userId 用户 ID
-   * @param hashedRefreshToken 哈希后的 Refresh Token，传 null 表示清除（登出场景）
-   */
-  async updateRefreshToken(userId: string, hashedRefreshToken: string | null): Promise<void> {
-    if (!isUUID(userId)) {
-      throw new NotFoundException(`User with ID ${userId} not found`);
-    }
-    // 登出时传入 null，存储空字符串以明确标识无有效 Token
-    // 验证时检查字段是否存在且非空
-    await this.userRepository.update(userId, {
-      currentHashedRefreshToken: hashedRefreshToken ?? '',
-    });
-  }
-
-  /**
-   * 根据 ID 查询用户，包含 Refresh Token 哈希字段（用于 Token 刷新校验）
-   */
-  async findOneWithRefreshToken(id: string): Promise<User | null> {
-    if (!isUUID(id)) {
-      return null;
-    }
-    // 由于 currentHashedRefreshToken 可能被 select: false 隐藏，这里显式查询
-    return this.userRepository.findOne({
-      where: { id },
-      select: ['id', 'name', 'phoneNumber', 'currentHashedRefreshToken'],
-    });
-  }
 }
