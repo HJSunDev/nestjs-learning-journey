@@ -87,6 +87,8 @@
   - 基于 DIP 原则的 Token 存储抽象、Redis TTL 自动过期机制及生产级 Key 设计规范
 - **[036. CORS 跨域配置与配置架构重构](notes/036-cors-and-config-architecture.md)**
   - 生产级 CORS 白名单机制、Swagger UI 跨域支持、配置分层架构及 .env 管理最佳实践
+- **[037. 生产级 Docker 构建 (Production Dockerfile)](notes/037-production-dockerfile.md)**
+  - 多阶段构建优化镜像体积、Alpine 基础镜像、健康检查配置及 docker-compose 应用服务集成
 
 
 ## 📝 维护指南

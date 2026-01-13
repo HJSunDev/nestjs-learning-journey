@@ -1,5 +1,96 @@
 version: '3.8'
+
+# ============================================================
+# 服务组说明：
+# - 基础设施服务：postgres, redis（无 profile，始终可用）
+# - 开发工具服务：pgadmin, redis-insight（dev profile）
+# - 应用服务：app（prod profile）
+# 
+# 使用方式：
+# - 本地开发：docker compose --profile dev up -d（数据库 + 可视化工具）
+# - 生产部署：docker compose --profile prod up -d --build（应用 + 数据库）
+# - 仅数据库：docker compose up -d（最简模式）
+# ============================================================
+
 services:
+  # === NestJS 应用服务 ===
+  # 仅在 prod profile 下启动
+  app:
+    profiles: [prod]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nest-journey-app
+    restart: unless-stopped
+    
+    # 端口映射：宿主机 3000 -> 容器 3000
+    ports:
+      - "${APP_PORT:-3000}:${APP_PORT:-3000}"
+    
+    # 环境变量配置
+    environment:
+      # 应用配置
+      APP_ENV: ${APP_ENV:-production}
+      APP_PORT: ${APP_PORT:-3000}
+      
+      # 数据库配置（容器网络内使用服务名作为主机名）
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      DB_SYNCHRONIZE: "false"
+      DB_LOGGING: ${DB_LOGGING:-false}
+      
+      # Redis 配置（容器网络内使用服务名作为主机名）
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: ${REDIS_DB:-0}
+      
+      # JWT 配置
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      
+      # 存储配置
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      STORAGE_LOCAL_DIR: ${STORAGE_LOCAL_DIR:-static/upload}
+      STORAGE_LOCAL_PREFIX: ${STORAGE_LOCAL_PREFIX:-/static/upload}
+      
+      # CORS 配置
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      
+      # 日志配置
+      LOG_LEVEL: ${LOG_LEVEL:-warn}
+      LOG_ON_CONSOLE: ${LOG_ON_CONSOLE:-false}
+    
+    # 依赖服务：确保数据库和 Redis 先启动
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    
+    # 健康检查（使用 Dockerfile 内置的 HEALTHCHECK，此处可覆盖）
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${APP_PORT:-3000}/health/liveness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # 资源限制（可选，生产环境建议开启）
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 256M
+
   # === PostgreSQL 服务 ===
   postgres:
     # 镜像：使用官方 PostgreSQL 16 镜像（当前最新稳定版）
@@ -30,9 +121,21 @@ services:
     # PostgreSQL 数据目录是 /var/lib/postgresql/data
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
+    
+    # 健康检查：用于 app 服务的 depends_on condition
+    healthcheck:
+      # 使用容器内环境变量，避免宿主机未注入 DB_* 时健康检查失效
+      # 这里需要用 $$ 转义，否则 docker compose 会把 $POSTGRES_* 当作宿主机变量插值
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # === pgAdmin 服务 (Web管理端) ===
+  # 仅在 dev profile 下启动
   pgadmin:
+    profiles: [dev]
     image: dpage/pgadmin4
     container_name: nest-journey-pgadmin
     restart: always
@@ -73,7 +176,9 @@ services:
       - ./redis-data:/data
 
   # === Redis Insight 服务 (Web管理端) ===
+  # 仅在 dev profile 下启动
   redis-insight:
+    profiles: [dev]
     image: redis/redisinsight:latest
     container_name: nest-journey-redis-insight
     restart: always

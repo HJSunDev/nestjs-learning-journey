@@ -1,0 +1,71 @@
+# ====================================
+# Docker Build Context Ignore Rules
+# ====================================
+# 作用：排除不需要复制到 Docker 构建上下文的文件
+# 好处：1) 减少构建上下文传输时间  2) 避免敏感信息泄露  3) 提高构建缓存命中率
+
+# === 依赖与构建产物 ===
+# 容器内会重新 npm ci，无需复制本地 node_modules
+node_modules
+# 构建产物由容器内生成
+dist
+build
+
+# === 版本控制 ===
+.git
+.gitignore
+
+# === 环境变量文件 ===
+# 敏感信息不应打包进镜像，应通过运行时环境变量注入
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# === 日志与运行时数据 ===
+logs
+*.log
+npm-debug.log*
+pids
+*.pid
+
+# === 数据库数据卷 ===
+# 这些目录由 docker-compose volumes 管理，不应进入构建上下文
+postgres-data
+redis-data
+mongo-data
+pgadmin-data
+redis-insight-data
+
+# === 用户上传文件 ===
+# 生产环境应使用 OSS/S3，本地上传目录不应打包
+static/upload
+
+# === 测试与覆盖率 ===
+coverage
+.nyc_output
+test
+
+# === IDE 与编辑器 ===
+.idea
+.vscode
+*.sublime-*
+.DS_Store
+
+# === 文档与笔记 ===
+# 学习笔记不需要进入生产镜像
+docs
+*.md
+!README.md
+
+# === Cursor AI 配置 ===
+.cursor
+
+# === AI 上下文镜像文件 ===
+env.ai
+
+# === 临时文件 ===
+.temp
+.tmp
+*.swp
+*.swo

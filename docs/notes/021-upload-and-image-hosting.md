@@ -21,7 +21,7 @@
 Node.js 的 `path` 模块提供了两种主要的路径处理方法，理解其区别对于构建跨平台、容器友好的应用至关重要。
 
 **process.cwd()**:
-- **含义**: Current Working Directory (当前工作目录)。指的是你在终端执行启动命令（如 `npm run start` 或 `node dist/main`）时所在的目录。通常情况下，这就是项目的**根目录**。
+- **含义**: Current Working Directory (当前工作目录)。指的是你在终端执行启动命令（如 `npm run start` 或 `node dist/src/main.js`）时所在的目录。通常情况下，这就是项目的**根目录**。
 - **区别**: 不同于 `__dirname` (当前代码文件所在的目录)，`process.cwd()` 是动态的，取决于运行时的上下文。
 - **作用**: 它是 `path.resolve` 的基准。
 
