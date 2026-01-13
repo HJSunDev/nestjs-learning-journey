@@ -19,8 +19,8 @@ build
 # 敏感信息不应打包进镜像，应通过运行时环境变量注入
 .env
 .env.*
-!.env.example
-!.env.production.example
+env.example
+env.ai
 
 # === 日志与运行时数据 ===
 logs
