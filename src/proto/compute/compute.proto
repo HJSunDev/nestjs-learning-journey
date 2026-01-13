@@ -1,0 +1,89 @@
+/**
+ * 计算服务 Proto 定义
+ *
+ * 此文件定义 NestJS 与 Go 计算服务之间的 gRPC 接口契约
+ * 修改后需要确保两端同步更新
+ */
+syntax = "proto3";
+
+package compute;
+
+// ===== 计算服务 =====
+service ComputeService {
+  // 同步计算 - 发送请求并等待完整响应
+  rpc Calculate(CalculateRequest) returns (CalculateResponse);
+  
+  // 流式计算 - 发送请求并接收流式响应 (服务端流)
+  rpc StreamCalculate(CalculateRequest) returns (stream CalculateChunk);
+  
+  // 健康检查 (遵循 gRPC 健康检查协议)
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// ===== 消息定义 =====
+
+// 计算请求
+message CalculateRequest {
+  // 任务唯一标识 (UUID)
+  string task_id = 1;
+  
+  // 任务类型 (如: 'image_process', 'data_analysis', 'ai_inference')
+  string task_type = 2;
+  
+  // 任务负载数据 (JSON 字符串或 Base64 编码的二进制)
+  string payload = 3;
+  
+  // 元数据键值对 (可选)
+  map<string, string> metadata = 4;
+}
+
+// 计算响应
+message CalculateResponse {
+  // 任务唯一标识
+  string task_id = 1;
+  
+  // 任务状态: 'success' | 'failed' | 'timeout'
+  string status = 2;
+  
+  // 结果数据 (JSON 字符串或 Base64 编码的二进制)
+  string result = 3;
+  
+  // 执行耗时 (毫秒)
+  int64 elapsed_ms = 4;
+  
+  // 错误信息 (status='failed' 时填充)
+  string error_message = 5;
+}
+
+// 流式响应块
+message CalculateChunk {
+  // 任务唯一标识
+  string task_id = 1;
+  
+  // 数据块内容
+  string chunk = 2;
+  
+  // 当前块序号 (从 0 开始)
+  int32 index = 3;
+  
+  // 是否为最后一块
+  bool is_final = 4;
+}
+
+// 健康检查请求
+message HealthCheckRequest {
+  // 要检查的服务名 (空字符串表示检查整体)
+  string service = 1;
+}
+
+// 健康检查响应
+message HealthCheckResponse {
+  // 服务状态枚举
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+  }
+  
+  ServingStatus status = 1;
+}

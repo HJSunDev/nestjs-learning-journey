@@ -12,6 +12,7 @@ import storageConfig from './storage.config';
 import corsConfig from './cors.config';
 import loggerConfig from './logger.config';
 import aiConfig from './ai.config';
+import grpcConfig from './grpc.config';
 
 export {
   appConfig,
@@ -22,6 +23,7 @@ export {
   corsConfig,
   loggerConfig,
   aiConfig,
+  grpcConfig,
 };
 
 // 所有配置的聚合数组，用于 ConfigModule.forRoot({ load: [...] })
@@ -34,4 +36,5 @@ export const configurations = [
   corsConfig,
   loggerConfig,
   aiConfig,
+  // grpcConfig, // 暂未启用 gRPC 模块，启用时同时取消 app.module.ts 中 GrpcModule.registerAsync() 的注释
 ];

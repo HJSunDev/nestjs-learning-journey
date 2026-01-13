@@ -10,6 +10,7 @@ import { AppConfigModule } from './common/configs/app-config.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { RedisModule } from './common/redis/redis.module';
 import { HealthModule } from './common/health/health.module';
+import { GrpcModule } from './grpc';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -70,6 +71,8 @@ import { TypeOrmLogger } from './common/logger/typeorm-logger';
         };
       },
     }),
+    // gRPC 客户端模块 (用于连接 Go 微服务)
+    // GrpcModule.registerAsync(),
     UserModule,
     RoleModule,
     UploadModule,

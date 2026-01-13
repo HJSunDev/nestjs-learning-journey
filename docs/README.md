@@ -91,6 +91,8 @@
   - 多阶段构建优化镜像体积、Alpine 基础镜像、健康检查配置及 docker-compose 应用服务集成
 - **[038. AI 服务模块架构设计 (AI Service Architecture)](notes/038-ai-service-architecture.md)**
   - Vercel AI SDK 技术选型、多模型 Provider 抽象、SSE 流式响应实现及工具调用架构设计
+- **[039. gRPC 客户端集成与微服务通信 (gRPC Client Integration)](notes/039-grpc-client-integration.md)**
+  - NestJS 与 Go 微服务通信、Proto 契约设计、客户端封装最佳实践及健康检查集成
 
 
 ## 📝 维护指南
