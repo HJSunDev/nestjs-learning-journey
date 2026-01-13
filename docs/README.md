@@ -89,6 +89,8 @@
   - 生产级 CORS 白名单机制、Swagger UI 跨域支持、配置分层架构及 .env 管理最佳实践
 - **[037. 生产级 Docker 构建 (Production Dockerfile)](notes/037-production-dockerfile.md)**
   - 多阶段构建优化镜像体积、Alpine 基础镜像、健康检查配置及 docker-compose 应用服务集成
+- **[038. AI 服务模块架构设计 (AI Service Architecture)](notes/038-ai-service-architecture.md)**
+  - Vercel AI SDK 技术选型、多模型 Provider 抽象、SSE 流式响应实现及工具调用架构设计
 
 
 ## 📝 维护指南

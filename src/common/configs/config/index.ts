@@ -1,6 +1,6 @@
 /**
  * 配置文件统一导出
- * 
+ *
  * 使用 registerAs 创建的命名空间配置，
  * 通过 ConfigModule.forRoot({ load: [...] }) 加载
  */
@@ -11,6 +11,7 @@ import jwtConfig from './jwt.config';
 import storageConfig from './storage.config';
 import corsConfig from './cors.config';
 import loggerConfig from './logger.config';
+import aiConfig from './ai.config';
 
 export {
   appConfig,
@@ -20,6 +21,7 @@ export {
   storageConfig,
   corsConfig,
   loggerConfig,
+  aiConfig,
 };
 
 // 所有配置的聚合数组，用于 ConfigModule.forRoot({ load: [...] })
@@ -31,4 +33,5 @@ export const configurations = [
   storageConfig,
   corsConfig,
   loggerConfig,
+  aiConfig,
 ];

@@ -5,6 +5,7 @@ import { UserModule } from './user/user.module';
 import { RoleModule } from './role/role.module';
 import { UploadModule } from './upload/upload.module';
 import { AuthModule } from './auth/auth.module';
+import { AiModule } from './ai/ai.module';
 import { AppConfigModule } from './common/configs/app-config.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { RedisModule } from './common/redis/redis.module';
@@ -74,6 +75,7 @@ import { TypeOrmLogger } from './common/logger/typeorm-logger';
     UploadModule,
     AuthModule,
     HealthModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [
