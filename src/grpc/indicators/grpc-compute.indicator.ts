@@ -11,12 +11,12 @@ import {
   HealthIndicatorService,
   HealthIndicatorResult,
 } from '@nestjs/terminus';
-import { ComputeServiceClient } from '../clients';
+import { ImageServiceClient } from '../clients';
 
 @Injectable()
 export class GrpcComputeHealthIndicator {
   constructor(
-    private readonly computeClient: ComputeServiceClient,
+    private readonly imageClient: ImageServiceClient,
     private readonly healthIndicatorService: HealthIndicatorService,
   ) {}
 
@@ -31,7 +31,7 @@ export class GrpcComputeHealthIndicator {
     const indicator = this.healthIndicatorService.check(key);
 
     try {
-      const isAvailable = await this.computeClient.isAvailable();
+      const isAvailable = await this.imageClient.isAvailable();
 
       if (isAvailable) {
         return indicator.up({

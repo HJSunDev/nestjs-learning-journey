@@ -1,84 +1,204 @@
 /**
- * 计算服务 Proto 定义
+ * Go 计算服务 Proto 定义
  *
- * 此文件定义 NestJS 与 Go 计算服务之间的 gRPC 接口契约
+ * 此文件定义 NestJS BFF 与 Go 计算服务之间的 gRPC 接口契约
+ * 一个 Proto 文件可包含多个 Service，共享同一个 gRPC 连接
+ *
  * 修改后需要确保两端同步更新
  */
 syntax = "proto3";
 
 package compute;
 
-// ===== 计算服务 =====
-service ComputeService {
-  // 同步计算 - 发送请求并等待完整响应
-  rpc Calculate(CalculateRequest) returns (CalculateResponse);
+// =============================================================================
+// 图像处理服务
+// =============================================================================
+service ImageService {
+  // 图像压缩 - 降低图像质量以减小文件体积
+  rpc Compress(CompressRequest) returns (CompressResponse);
   
-  // 流式计算 - 发送请求并接收流式响应 (服务端流)
-  rpc StreamCalculate(CalculateRequest) returns (stream CalculateChunk);
+  // 图像缩放 - 调整图像尺寸
+  rpc Resize(ResizeRequest) returns (ResizeResponse);
   
-  // 健康检查 (遵循 gRPC 健康检查协议)
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  // 添加水印 - 在图像上叠加文字或图片水印
+  rpc Watermark(WatermarkRequest) returns (WatermarkResponse);
+  
+  // 批量处理 - 流式返回多个处理结果
+  rpc BatchProcess(BatchProcessRequest) returns (stream ProcessChunk);
 }
 
-// ===== 消息定义 =====
-
-// 计算请求
-message CalculateRequest {
-  // 任务唯一标识 (UUID)
-  string task_id = 1;
-  
-  // 任务类型 (如: 'image_process', 'data_analysis', 'ai_inference')
-  string task_type = 2;
-  
-  // 任务负载数据 (JSON 字符串或 Base64 编码的二进制)
-  string payload = 3;
-  
-  // 元数据键值对 (可选)
-  map<string, string> metadata = 4;
+// =============================================================================
+// 健康检查服务 (遵循 gRPC 健康检查协议)
+// =============================================================================
+service HealthService {
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
 }
 
-// 计算响应
-message CalculateResponse {
-  // 任务唯一标识
-  string task_id = 1;
-  
-  // 任务状态: 'success' | 'failed' | 'timeout'
-  string status = 2;
-  
-  // 结果数据 (JSON 字符串或 Base64 编码的二进制)
-  string result = 3;
-  
-  // 执行耗时 (毫秒)
-  int64 elapsed_ms = 4;
-  
-  // 错误信息 (status='failed' 时填充)
-  string error_message = 5;
+// =============================================================================
+// 图像处理消息定义
+// =============================================================================
+
+// 图像格式枚举
+enum ImageFormat {
+  FORMAT_UNKNOWN = 0;
+  FORMAT_JPEG = 1;
+  FORMAT_PNG = 2;
+  FORMAT_WEBP = 3;
+  FORMAT_GIF = 4;
 }
 
-// 流式响应块
-message CalculateChunk {
-  // 任务唯一标识
-  string task_id = 1;
+// ----- 压缩 -----
+
+message CompressRequest {
+  // 原始图像数据 (Base64 编码)
+  bytes image_data = 1;
   
-  // 数据块内容
-  string chunk = 2;
+  // 压缩质量 (1-100，仅对 JPEG/WEBP 有效)
+  int32 quality = 2;
   
-  // 当前块序号 (从 0 开始)
-  int32 index = 3;
-  
-  // 是否为最后一块
-  bool is_final = 4;
+  // 输出格式 (可选，不填则保持原格式)
+  ImageFormat output_format = 3;
 }
 
-// 健康检查请求
+message CompressResponse {
+  // 压缩后的图像数据
+  bytes image_data = 1;
+  
+  // 原始大小 (字节)
+  int64 original_size = 2;
+  
+  // 压缩后大小 (字节)
+  int64 compressed_size = 3;
+  
+  // 压缩比 (compressed_size / original_size)
+  float compression_ratio = 4;
+  
+  // 处理耗时 (毫秒)
+  int64 elapsed_ms = 5;
+}
+
+// ----- 缩放 -----
+
+message ResizeRequest {
+  bytes image_data = 1;
+  
+  // 目标宽度 (像素，0 表示按比例自动计算)
+  int32 width = 2;
+  
+  // 目标高度 (像素，0 表示按比例自动计算)
+  int32 height = 3;
+  
+  // 是否保持宽高比
+  bool keep_aspect_ratio = 4;
+  
+  // 输出格式
+  ImageFormat output_format = 5;
+}
+
+message ResizeResponse {
+  bytes image_data = 1;
+  
+  // 原始尺寸
+  int32 original_width = 2;
+  int32 original_height = 3;
+  
+  // 处理后尺寸
+  int32 new_width = 4;
+  int32 new_height = 5;
+  
+  int64 elapsed_ms = 6;
+}
+
+// ----- 水印 -----
+
+message WatermarkRequest {
+  bytes image_data = 1;
+  
+  // 水印类型
+  oneof watermark {
+    // 文字水印
+    TextWatermark text = 2;
+    // 图片水印
+    ImageWatermark image = 3;
+  }
+  
+  // 水印位置
+  WatermarkPosition position = 4;
+  
+  // 透明度 (0.0-1.0)
+  float opacity = 5;
+}
+
+message TextWatermark {
+  string text = 1;
+  int32 font_size = 2;
+  string color = 3;  // 十六进制颜色，如 "#FFFFFF"
+}
+
+message ImageWatermark {
+  bytes watermark_data = 1;
+  int32 width = 2;
+  int32 height = 3;
+}
+
+enum WatermarkPosition {
+  POSITION_UNKNOWN = 0;
+  POSITION_TOP_LEFT = 1;
+  POSITION_TOP_RIGHT = 2;
+  POSITION_BOTTOM_LEFT = 3;
+  POSITION_BOTTOM_RIGHT = 4;
+  POSITION_CENTER = 5;
+}
+
+message WatermarkResponse {
+  bytes image_data = 1;
+  int64 elapsed_ms = 2;
+}
+
+// ----- 批量处理 -----
+
+message BatchProcessRequest {
+  // 多个图像
+  repeated bytes images = 1;
+  
+  // 处理操作
+  BatchOperation operation = 2;
+}
+
+message BatchOperation {
+  oneof op {
+    CompressRequest compress = 1;
+    ResizeRequest resize = 2;
+  }
+}
+
+message ProcessChunk {
+  // 当前处理的图像索引
+  int32 index = 1;
+  
+  // 处理结果
+  bytes image_data = 2;
+  
+  // 是否成功
+  bool success = 3;
+  
+  // 错误信息 (失败时)
+  string error_message = 4;
+  
+  // 是否为最后一个
+  bool is_final = 5;
+}
+
+// =============================================================================
+// 健康检查消息定义
+// =============================================================================
+
 message HealthCheckRequest {
   // 要检查的服务名 (空字符串表示检查整体)
   string service = 1;
 }
 
-// 健康检查响应
 message HealthCheckResponse {
-  // 服务状态枚举
   enum ServingStatus {
     UNKNOWN = 0;
     SERVING = 1;

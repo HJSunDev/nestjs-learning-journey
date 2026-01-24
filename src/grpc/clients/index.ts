@@ -1,1 +1,1 @@
-export * from './compute-service.client';
+export * from './image-service.client';
