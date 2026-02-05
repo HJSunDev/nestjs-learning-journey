@@ -157,7 +157,7 @@ export class AiController {
     // 获取流式 Observable 并订阅
     const stream$ = this.aiService.streamChat(dto);
 
-    stream$.subscribe({
+    const subscription = stream$.subscribe({
       next: (chunk: StreamChunk) => {
         // 按 SSE 规范格式化输出
         const data = JSON.stringify(chunk);
@@ -182,7 +182,7 @@ export class AiController {
     // 处理客户端断开连接
     res.on('close', () => {
       this.logger.debug('客户端断开连接');
-      // Observable 会自动清理，无需手动处理
+      subscription.unsubscribe();
     });
   }
 
@@ -218,7 +218,7 @@ export class AiController {
 
     const stream$ = this.aiService.streamReasoningChat(dto);
 
-    stream$.subscribe({
+    const subscription = stream$.subscribe({
       next: (chunk: StreamChunk) => {
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
       },
@@ -237,6 +237,7 @@ export class AiController {
 
     res.on('close', () => {
       this.logger.debug('客户端断开连接');
+      subscription.unsubscribe();
     });
   }
 }

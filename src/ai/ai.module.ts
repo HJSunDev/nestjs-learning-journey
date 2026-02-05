@@ -1,29 +1,30 @@
 import { Module } from '@nestjs/common';
-
+import { ConfigModule } from '@nestjs/config';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
-import { ToolRegistry } from './tools';
+import { ToolRegistry } from './tools/tool.registry';
+import { AiModelFactory } from './factories/model.factory';
 
 /**
- * AI 服务模块
+ * AI 模块
  *
- * 提供 AI 对话、流式响应、工具调用等能力
+ * 负责集成各类 AI 能力，包括：
+ * 1. 多模型厂商适配 (DeepSeek, Qwen, Moonshot, GLM)
+ * 2. 对话与推理服务 (Chat & Reasoning)
+ * 3. 智能体与工具调用 (Agents & Tools)
  *
- * 功能特性：
- * - 多 Provider 支持（DeepSeek、Qwen、GLM、MiniMax、OpenAI、Claude、Gemini）
- * - 流式 SSE 响应
- * - 推理过程获取
- * - 工具调用（预留）
- * - 多智能体协作（预留）
- *
- * 使用方式：
- * 1. 在 AppModule 中导入此模块
- * 2. 配置 .env 中的 API Key
- * 3. 通过 /ai/* 端点访问 AI 服务
+ * 依赖说明：
+ * - 核心依赖: LangChain / LangGraph (构建中)
+ * - 基础设施: AiModelFactory (模型工厂), ToolRegistry (工具注册)
  */
 @Module({
+  imports: [ConfigModule],
   controllers: [AiController],
-  providers: [AiService, ToolRegistry],
+  providers: [
+    AiService,
+    ToolRegistry,
+    AiModelFactory, // 注册模型工厂服务
+  ],
   exports: [AiService, ToolRegistry],
 })
 export class AiModule {}
