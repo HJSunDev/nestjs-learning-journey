@@ -5,37 +5,28 @@
  */
 
 /**
- * AI Provider 服务注入 Token
- * 用于在 NestJS IoC 容器中标识 Provider 抽象
- */
-export const AI_PROVIDER = 'AI_PROVIDER';
-
-/**
- * AI Provider 工厂注入 Token
- * 用于动态获取不同厂商的 Provider 实例
- */
-export const AI_PROVIDER_FACTORY = 'AI_PROVIDER_FACTORY';
-
-/**
  * Tool Registry 注入 Token
  */
 export const TOOL_REGISTRY = 'TOOL_REGISTRY';
 
 /**
  * 支持的 AI 提供商枚举
+ *
+ * 仅包含已适配并经过验证的厂商。
+ * 每个枚举值对应 AiModelFactory 中的一个工厂方法。
  */
 export enum AiProvider {
   DEEPSEEK = 'deepseek',
   QWEN = 'qwen',
+  MOONSHOT = 'moonshot',
   GLM = 'glm',
-  MINIMAX = 'minimax',
-  OPENAI = 'openai',
-  ANTHROPIC = 'anthropic',
-  GOOGLE = 'google',
 }
 
 /**
  * 流式输出块类型枚举
+ *
+ * 用于 SSE 流式响应中标识每个数据块的语义类型，
+ * 前端据此决定如何渲染（如推理过程折叠显示、文本逐字输出等）。
  */
 export enum StreamChunkType {
   /** 推理/思考过程 */

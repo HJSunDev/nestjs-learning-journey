@@ -15,6 +15,7 @@ import {
   ApiProduces,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { Observable } from 'rxjs';
 
 import { AiService } from './ai.service';
 import {
@@ -143,47 +144,8 @@ export class AiController {
     @Body() dto: ChatRequestDto,
     @Res() res: Response,
   ): void {
-    // 设置 SSE 响应头
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    // 禁用 Nginx 缓冲（生产环境反向代理时需要）
-    res.setHeader('X-Accel-Buffering', 'no');
-
-    this.logger.debug(
-      `开始流式对话: provider=${dto.provider}, model=${dto.model}`,
-    );
-
-    // 获取流式 Observable 并订阅
     const stream$ = this.aiService.streamChat(dto);
-
-    const subscription = stream$.subscribe({
-      next: (chunk: StreamChunk) => {
-        // 按 SSE 规范格式化输出
-        const data = JSON.stringify(chunk);
-        res.write(`data: ${data}\n\n`);
-      },
-      error: (error: Error) => {
-        this.logger.error('流式对话错误', error.stack);
-        const errorChunk = JSON.stringify({
-          type: 'error',
-          error: error.message,
-        });
-        res.write(`data: ${errorChunk}\n\n`);
-        res.end();
-      },
-      complete: () => {
-        this.logger.debug('流式对话完成');
-        res.write('data: [DONE]\n\n');
-        res.end();
-      },
-    });
-
-    // 处理客户端断开连接
-    res.on('close', () => {
-      this.logger.debug('客户端断开连接');
-      subscription.unsubscribe();
-    });
+    this.setupSseStream(res, stream$, '流式对话', dto.provider, dto.model);
   }
 
   /**
@@ -206,35 +168,61 @@ export class AiController {
     @Body() dto: ChatRequestDto,
     @Res() res: Response,
   ): void {
-    // 设置 SSE 响应头
+    const stream$ = this.aiService.streamReasoningChat(dto);
+    this.setupSseStream(res, stream$, '流式推理对话', dto.provider, dto.model);
+  }
+
+  // ============================================================
+  // SSE 辅助方法
+  // ============================================================
+
+  /**
+   * 设置 SSE 流式响应
+   *
+   * 将 Observable<StreamChunk> 桥接到 HTTP Response 的 SSE 输出。
+   * 提取此方法以消除 streamChat 和 streamReasoningChat 中的重复代码。
+   *
+   * @param res       Express Response 对象
+   * @param stream$   StreamChunk 的 Observable 流
+   * @param label     日志标签（用于区分不同类型的流式调用）
+   * @param provider  提供商标识（日志用途）
+   * @param model     模型名称（日志用途）
+   */
+  private setupSseStream(
+    res: Response,
+    stream$: Observable<StreamChunk>,
+    label: string,
+    provider: string,
+    model: string,
+  ): void {
+    // SSE 标准响应头
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    // 禁用 Nginx 缓冲（生产环境反向代理时需要）
     res.setHeader('X-Accel-Buffering', 'no');
 
-    this.logger.debug(
-      `开始流式推理对话: provider=${dto.provider}, model=${dto.model}`,
-    );
-
-    const stream$ = this.aiService.streamReasoningChat(dto);
+    this.logger.debug(`开始${label}: provider=${provider}, model=${model}`);
 
     const subscription = stream$.subscribe({
       next: (chunk: StreamChunk) => {
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
       },
       error: (error: Error) => {
-        this.logger.error('流式推理对话错误', error.stack);
+        this.logger.error(`${label}错误`, error.stack);
         res.write(
           `data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`,
         );
         res.end();
       },
       complete: () => {
+        this.logger.debug(`${label}完成`);
         res.write('data: [DONE]\n\n');
         res.end();
       },
     });
 
+    // 客户端断开连接时取消订阅，释放资源
     res.on('close', () => {
       this.logger.debug('客户端断开连接');
       subscription.unsubscribe();
