@@ -9,7 +9,8 @@
 
 <!-- MODULE_EXP_START -->
 
-_暂无条目，经验将在未来协作中渐进式积累。_
+- **[ai.md](modules/ai.md)** — AI 模块经验
+  - [EXP-001] @langchain/openai (ChatOpenAI) 会静默丢弃所有模型的 reasoning_content 推理字段
 
 <!-- MODULE_EXP_END -->
 
