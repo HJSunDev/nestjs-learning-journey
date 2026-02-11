@@ -30,7 +30,13 @@
 
 ### 1.3 敏感信息处理机制：白名单 (Whitelist) vs 黑名单 (Blacklist)
 
-在 DTO 序列化中，有两种核心策略：
+在 DTO 序列化中，理解 `class-transformer` 的默认行为至关重要：
+
+> **⚠️ 默认行为 (Default Behavior)**：
+> 如果 DTO 类上**没有**添加 `@Exclude()` 装饰器，且属性上也没有 `@Exclude` 或 `@Expose`，系统默认采用 `exposeAll` 策略。
+> 这意味着：**源对象（Entity）中的所有字段都会被原样返回**，无论它们是否在 DTO 中定义。这与 Request DTO 的校验逻辑（自动剔除未定义字段）完全相反，极易导致敏感数据泄露。
+
+基于此，有两种核心策略：
 
 #### 策略 A：白名单机制 (Whitelist) - **[强烈推荐]**
 *   **做法**：在 DTO 类上添加 `@Exclude()` 装饰器。

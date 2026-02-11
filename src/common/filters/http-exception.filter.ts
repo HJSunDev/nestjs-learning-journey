@@ -8,6 +8,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
     const status = exception.getStatus();
+    // 获取异常响应
     const exceptionResponse = exception.getResponse();
 
     // 处理 exceptionResponse，它可能是字符串也可能是对象
