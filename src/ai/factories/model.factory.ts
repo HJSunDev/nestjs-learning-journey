@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
  * 安装 @langchain/core 后应替换为：
  * import { BaseChatModel } from '@langchain/core/language_models/chat_models';
  */
-export type BaseChatModel = any;
+export type BaseChatModel = unknown;
 
 /**
  * AI 模型工厂
@@ -75,16 +75,17 @@ export class AiModelFactory {
    * 从配置中获取指定提供商的 Base URL
    */
   private getBaseUrl(provider: string): string | undefined {
-    return this.configService.get<string>(
-      `ai.providers.${provider}.baseUrl`,
-    );
+    return this.configService.get<string>(`ai.providers.${provider}.baseUrl`);
   }
 
   // ============================================================
   // 工厂方法（LangChain 依赖安装后启用真实实现）
   // ============================================================
 
-  private createDeepSeekModel(apiKey: string, options: any): BaseChatModel {
+  private createDeepSeekModel(
+    apiKey: string,
+    options: Record<string, unknown>,
+  ): BaseChatModel {
     // TODO: 安装 @langchain/deepseek 后启用
     // return new ChatDeepSeek({
     //   apiKey,
@@ -93,12 +94,15 @@ export class AiModelFactory {
     //   streaming: options.streaming,
     // });
     this.logger.debug(
-      `创建 DeepSeek 模型 [model=${options.model ?? 'deepseek-chat'}]`,
+      `创建 DeepSeek 模型 [model=${(options.model as string) ?? 'deepseek-chat'}]`,
     );
     return { provider: 'deepseek', ...options };
   }
 
-  private createQwenModel(apiKey: string, options: any): BaseChatModel {
+  private createQwenModel(
+    apiKey: string,
+    options: Record<string, unknown>,
+  ): BaseChatModel {
     // TODO: 安装 @langchain/community 后启用
     // return new ChatAlibabaTongyi({
     //   alibabaApiKey: apiKey,
@@ -107,12 +111,15 @@ export class AiModelFactory {
     //   streaming: options.streaming,
     // });
     this.logger.debug(
-      `创建 Qwen 模型 [model=${options.model ?? 'qwen-turbo'}]`,
+      `创建 Qwen 模型 [model=${(options.model as string) ?? 'qwen-turbo'}]`,
     );
     return { provider: 'qwen', ...options };
   }
 
-  private createMoonshotModel(apiKey: string, options: any): BaseChatModel {
+  private createMoonshotModel(
+    apiKey: string,
+    options: Record<string, unknown>,
+  ): BaseChatModel {
     // TODO: 安装 @langchain/community 后启用
     // return new ChatMoonshot({
     //   apiKey,
@@ -121,12 +128,15 @@ export class AiModelFactory {
     //   streaming: options.streaming,
     // });
     this.logger.debug(
-      `创建 Moonshot 模型 [model=${options.model ?? 'moonshot-v1-8k'}]`,
+      `创建 Moonshot 模型 [model=${(options.model as string) ?? 'moonshot-v1-8k'}]`,
     );
     return { provider: 'moonshot', ...options };
   }
 
-  private createZhipuModel(apiKey: string, options: any): BaseChatModel {
+  private createZhipuModel(
+    apiKey: string,
+    options: Record<string, unknown>,
+  ): BaseChatModel {
     // TODO: 安装 @langchain/community 后启用
     // return new ChatZhipuAI({
     //   zhipuAIApiKey: apiKey,
@@ -135,7 +145,7 @@ export class AiModelFactory {
     //   streaming: options.streaming,
     // });
     this.logger.debug(
-      `创建 Zhipu (GLM) 模型 [model=${options.model ?? 'glm-4'}]`,
+      `创建 Zhipu (GLM) 模型 [model=${(options.model as string) ?? 'glm-4'}]`,
     );
     return { provider: 'glm', ...options };
   }

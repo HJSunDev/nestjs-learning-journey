@@ -140,10 +140,7 @@ export class AiController {
     status: 200,
     description: 'SSE 流式响应',
   })
-  streamChat(
-    @Body() dto: ChatRequestDto,
-    @Res() res: Response,
-  ): void {
+  streamChat(@Body() dto: ChatRequestDto, @Res() res: Response): void {
     const stream$ = this.aiService.streamChat(dto);
     this.setupSseStream(res, stream$, '流式对话', dto.provider, dto.model);
   }
@@ -164,10 +161,7 @@ export class AiController {
     status: 200,
     description: 'SSE 流式响应（含推理过程）',
   })
-  streamReasoningChat(
-    @Body() dto: ChatRequestDto,
-    @Res() res: Response,
-  ): void {
+  streamReasoningChat(@Body() dto: ChatRequestDto, @Res() res: Response): void {
     const stream$ = this.aiService.streamReasoningChat(dto);
     this.setupSseStream(res, stream$, '流式推理对话', dto.provider, dto.model);
   }

@@ -19,8 +19,12 @@ export interface NormalizedChatOutput {
  * 提取推理内容。不同厂商的字段位置可能不同。
  */
 type ReasoningExtractFn = (
-  additionalKwargs: Record<string, any>,
+  additionalKwargs: Record<string, unknown>,
 ) => string | null;
+
+/** 安全地将 unknown 值窄化为 string，非字符串返回 null */
+const asStringOrNull = (value: unknown): string | null =>
+  typeof value === 'string' ? value : null;
 
 /**
  * 厂商推理字段提取策略注册表
@@ -37,10 +41,10 @@ type ReasoningExtractFn = (
  * 扩展方式：新增厂商时，只需在此映射中添加对应的提取函数。
  */
 const REASONING_EXTRACTORS: Record<string, ReasoningExtractFn> = {
-  deepseek: (kwargs) => kwargs?.reasoning_content ?? null,
-  qwen: (kwargs) => kwargs?.reasoning_content ?? null,
-  moonshot: (kwargs) => kwargs?.reasoning_content ?? null,
-  glm: (kwargs) => kwargs?.reasoning_content ?? null,
+  deepseek: (kwargs) => asStringOrNull(kwargs?.reasoning_content),
+  qwen: (kwargs) => asStringOrNull(kwargs?.reasoning_content),
+  moonshot: (kwargs) => asStringOrNull(kwargs?.reasoning_content),
+  glm: (kwargs) => asStringOrNull(kwargs?.reasoning_content),
 };
 
 /**
@@ -49,7 +53,7 @@ const REASONING_EXTRACTORS: Record<string, ReasoningExtractFn> = {
  * 对未注册的厂商，尝试从 reasoning_content 提取（OpenAI 兼容格式的通用位置）。
  */
 const DEFAULT_EXTRACTOR: ReasoningExtractFn = (kwargs) =>
-  kwargs?.reasoning_content ?? null;
+  asStringOrNull(kwargs?.reasoning_content);
 
 /**
  * 推理字段归一化服务
@@ -80,7 +84,7 @@ export class ReasoningNormalizer {
    */
   normalize(
     provider: string,
-    rawOutput: Record<string, any>,
+    rawOutput: Record<string, unknown>,
   ): NormalizedChatOutput {
     const content = this.extractContent(rawOutput);
     const reasoning = this.extractReasoning(provider, rawOutput);
@@ -99,10 +103,14 @@ export class ReasoningNormalizer {
    */
   extractReasoning(
     provider: string,
-    rawOutput: Record<string, any>,
+    rawOutput: Record<string, unknown>,
   ): string | null {
     const extractor = REASONING_EXTRACTORS[provider] ?? DEFAULT_EXTRACTOR;
-    const additionalKwargs = rawOutput?.additional_kwargs ?? {};
+    const raw = rawOutput?.additional_kwargs;
+    const additionalKwargs: Record<string, unknown> =
+      typeof raw === 'object' && raw !== null
+        ? (raw as Record<string, unknown>)
+        : {};
 
     try {
       return extractor(additionalKwargs);
@@ -121,8 +129,8 @@ export class ReasoningNormalizer {
    * - string：普通文本消息
    * - ContentPart[]：多模态消息（图文混合），此处仅提取文本部分
    */
-  private extractContent(rawOutput: Record<string, any>): string {
-    const content = rawOutput?.content;
+  private extractContent(rawOutput: Record<string, unknown>): string {
+    const content: unknown = rawOutput?.content;
 
     if (typeof content === 'string') {
       return content;
@@ -131,8 +139,13 @@ export class ReasoningNormalizer {
     // 多模态消息：content 为 ContentPart 数组，仅提取 text 类型
     if (Array.isArray(content)) {
       return content
-        .filter((part: any) => part?.type === 'text')
-        .map((part: any) => part.text ?? '')
+        .filter(
+          (part): part is { type: string; text?: string } =>
+            typeof part === 'object' &&
+            part !== null &&
+            (part as Record<string, unknown>).type === 'text',
+        )
+        .map((part) => part.text ?? '')
         .join('');
     }
 

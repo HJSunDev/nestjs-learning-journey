@@ -15,7 +15,7 @@ import { Injectable, Logger } from '@nestjs/common';
 @Injectable()
 export class AgentRegistry {
   private readonly logger = new Logger(AgentRegistry.name);
-  private readonly agents = new Map<string, any>();
+  private readonly agents = new Map<string, unknown>();
 
   /**
    * 注册一个 Agent 实例
@@ -24,7 +24,7 @@ export class AgentRegistry {
    * @param agent Agent 实例（通常是封装了 LangGraph CompiledStateGraph 的 Injectable 服务）
    * @throws Error 当同名 Agent 已注册时
    */
-  register(name: string, agent: any): void {
+  register(name: string, agent: unknown): void {
     if (this.agents.has(name)) {
       throw new Error(`Agent '${name}' 已注册，不允许重复注册`);
     }
@@ -38,7 +38,7 @@ export class AgentRegistry {
    * @param name Agent 标识
    * @returns Agent 实例，未找到时返回 undefined
    */
-  get<T = any>(name: string): T | undefined {
+  get<T = unknown>(name: string): T | undefined {
     return this.agents.get(name) as T | undefined;
   }
 
@@ -49,7 +49,7 @@ export class AgentRegistry {
    * @returns Agent 实例
    * @throws Error 当 Agent 未注册时
    */
-  getOrThrow<T = any>(name: string): T {
+  getOrThrow<T = unknown>(name: string): T {
     const agent = this.agents.get(name);
     if (!agent) {
       throw new Error(

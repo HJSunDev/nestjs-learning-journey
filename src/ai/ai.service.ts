@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AiModelFactory } from './factories/model.factory';
+import { AiModelFactory, BaseChatModel } from './factories/model.factory';
 import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { MessageRole } from './constants';
 import {
@@ -9,7 +9,7 @@ import {
   ReasoningResponseDto,
 } from './dto';
 import { Observable, Subject } from 'rxjs';
-import { StreamChunk } from './interfaces';
+import { Message, StreamChunk } from './interfaces';
 import { StreamChunkType } from './constants';
 
 /**
@@ -42,14 +42,13 @@ export class AiService {
    * @returns 完整的对话响应
    */
   async chat(dto: ChatRequestDto): Promise<ChatResponseDto> {
-    const model = this.modelFactory.createChatModel(dto.provider, {
-      model: dto.model,
-      temperature: dto.temperature,
-    });
-
     this.logger.log(`调用聊天接口，提供商: ${dto.provider}`);
 
-    // TODO: 真实调用（安装 LangChain 后启用）
+    // TODO: LangChain 接入后替换为真实调用
+    // const model = this.modelFactory.createChatModel(dto.provider, {
+    //   model: dto.model,
+    //   temperature: dto.temperature,
+    // });
     // const result = await model.invoke(dto.messages);
     // const normalized = this.reasoningNormalizer.normalize(dto.provider, result);
     // return {
@@ -57,11 +56,11 @@ export class AiService {
     //   reasoning: normalized.reasoning ?? undefined,
     // };
 
-    // 模拟响应
-    return {
+    // 模拟响应（await 占位，LangChain 接入后替换为 model.invoke）
+    return await Promise.resolve({
       content: `[模拟] 来自 ${dto.provider} 的回复`,
       usage: { totalTokens: 0, promptTokens: 0, completionTokens: 0 },
-    };
+    });
   }
 
   /**
@@ -92,14 +91,13 @@ export class AiService {
    * @returns 包含推理过程的响应
    */
   async reasoningChat(dto: ChatRequestDto): Promise<ReasoningResponseDto> {
-    const model = this.modelFactory.createChatModel(dto.provider, {
-      model: dto.model,
-      temperature: dto.temperature,
-    });
-
     this.logger.log(`调用推理聊天接口，提供商: ${dto.provider}`);
 
-    // TODO: 真实调用（安装 LangChain 后启用）
+    // TODO: LangChain 接入后替换为真实调用
+    // const model = this.modelFactory.createChatModel(dto.provider, {
+    //   model: dto.model,
+    //   temperature: dto.temperature,
+    // });
     // const result = await model.invoke(dto.messages);
     // const normalized = this.reasoningNormalizer.normalize(dto.provider, result);
     // return {
@@ -107,12 +105,12 @@ export class AiService {
     //   reasoning: normalized.reasoning ?? '模型未返回推理过程',
     // };
 
-    // 模拟带推理的响应
-    return {
+    // 模拟带推理的响应（await 占位，LangChain 接入后替换为 model.invoke）
+    return await Promise.resolve({
       content: `[模拟] 来自 ${dto.provider} 的最终答案`,
       reasoning: `[模拟] 思维链过程...\n步骤 1: 分析问题...\n步骤 2: 得出结论...`,
       usage: { totalTokens: 0, promptTokens: 0, completionTokens: 0 },
-    };
+    });
   }
 
   /**
@@ -184,9 +182,9 @@ export class AiService {
    * @param includeReasoning  是否包含推理过程
    */
   private async executeStream(
-    model: any,
+    model: BaseChatModel,
     provider: string,
-    messages: any[],
+    messages: Message[],
     subject: Subject<StreamChunk>,
     includeReasoning = false,
   ) {
@@ -205,8 +203,14 @@ export class AiService {
 
       // 模拟 LangChain 的异步迭代器行为
       const mockChunks = [
-        { content: '', additional_kwargs: { reasoning_content: '正在思考第 1 步...' } },
-        { content: '', additional_kwargs: { reasoning_content: '正在思考第 2 步...' } },
+        {
+          content: '',
+          additional_kwargs: { reasoning_content: '正在思考第 1 步...' },
+        },
+        {
+          content: '',
+          additional_kwargs: { reasoning_content: '正在思考第 2 步...' },
+        },
         { content: '你好', additional_kwargs: {} },
         { content: '，', additional_kwargs: {} },
         { content: '世界', additional_kwargs: {} },
