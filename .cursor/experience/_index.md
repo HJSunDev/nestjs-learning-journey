@@ -11,6 +11,8 @@
 
 - **[ai.md](modules/ai.md)** — AI 模块经验
   - [EXP-001] @langchain/openai (ChatOpenAI) 会静默丢弃所有模型的 reasoning_content 推理字段
+  - [EXP-002] @langchain/community 的 ChatMoonshot 不支持 reasoning_content、tool calling 和真正的流式输出
+  - [EXP-003] 使用 ChatDeepSeek 统一适配所有 OpenAI 兼容的国内模型厂商
 
 <!-- MODULE_EXP_END -->
 
