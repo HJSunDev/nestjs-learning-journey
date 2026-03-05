@@ -16,6 +16,7 @@ export const TOOL_REGISTRY = 'TOOL_REGISTRY';
  * 每个枚举值对应 AiModelFactory 中的一个工厂方法。
  */
 export enum AiProvider {
+  SILICONFLOW = 'siliconflow',
   DEEPSEEK = 'deepseek',
   QWEN = 'qwen',
   MOONSHOT = 'moonshot',

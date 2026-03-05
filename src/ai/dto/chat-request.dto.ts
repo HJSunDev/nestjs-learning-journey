@@ -49,17 +49,19 @@ export class ChatRequestDto {
   @ApiProperty({
     description: 'AI 提供商',
     enum: AiProvider,
-    example: AiProvider.DEEPSEEK,
+    default: AiProvider.SILICONFLOW,
+    example: AiProvider.SILICONFLOW,
   })
   @IsEnum(AiProvider)
-  provider: AiProvider;
+  provider: AiProvider = AiProvider.SILICONFLOW;
 
   @ApiProperty({
-    description: '模型名称',
-    example: 'deepseek-chat',
+    description: '模型名称（SiliconFlow 格式：Pro/MiniMaxAI/MiniMax-M2.5）',
+    default: 'Pro/MiniMaxAI/MiniMax-M2.5',
+    example: 'Pro/MiniMaxAI/MiniMax-M2.5',
   })
   @IsString()
-  model: string;
+  model: string = 'Pro/MiniMaxAI/MiniMax-M2.5';
 
   @ApiProperty({
     description: '消息列表（支持多轮对话）',
@@ -126,17 +128,19 @@ export class QuickChatRequestDto {
   @ApiProperty({
     description: 'AI 提供商',
     enum: AiProvider,
-    example: AiProvider.DEEPSEEK,
+    default: AiProvider.SILICONFLOW,
+    example: AiProvider.SILICONFLOW,
   })
   @IsEnum(AiProvider)
-  provider: AiProvider;
+  provider: AiProvider = AiProvider.SILICONFLOW;
 
   @ApiProperty({
     description: '模型名称',
-    example: 'deepseek-chat',
+    default: 'Pro/MiniMaxAI/MiniMax-M2.5',
+    example: 'Pro/MiniMaxAI/MiniMax-M2.5',
   })
   @IsString()
-  model: string;
+  model: string = 'Pro/MiniMaxAI/MiniMax-M2.5';
 
   @ApiProperty({
     description: '用户输入',

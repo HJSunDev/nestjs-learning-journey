@@ -1,23 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
-/**
- * 临时类型别名
- *
- * LangChain 尚未安装，此处用 any 占位。
- * 安装 @langchain/core 后应替换为：
- * import { BaseChatModel } from '@langchain/core/language_models/chat_models';
- */
-export type BaseChatModel = unknown;
+import { ChatDeepSeek } from '@langchain/deepseek';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
 /**
  * AI 模型工厂
  *
- * 封装「如何创建模型实例」的复杂逻辑（API Key 获取、参数配置、Base URL 设置），
- * 对上层暴露统一的 createChatModel(provider, options) 接口。
+ * 基于 EXP-003 的架构决策，所有 OpenAI 兼容的厂商统一使用 ChatDeepSeek，
+ * 通过 configuration.baseURL 切换目标厂商或聚合平台（如硅基流动），
+ * 避免 @langchain/community 的实现质量问题（EXP-002）和
+ * @langchain/openai 的字段丢失问题（EXP-001）。
  *
  * 返回的实例统一遵循 LangChain 的 BaseChatModel 抽象，
- * 调用方无需关心底层是 ChatDeepSeek 还是 ChatAlibabaTongyi。
+ * 调用方无需关心底层连接的是哪家厂商。
  */
 @Injectable()
 export class AiModelFactory {
@@ -28,7 +23,7 @@ export class AiModelFactory {
   /**
    * 根据提供商标识创建 LangChain Chat Model 实例
    *
-   * @param provider 提供商 ID (如 'deepseek', 'qwen', 'moonshot', 'glm')
+   * @param provider 提供商 ID (如 'siliconflow', 'deepseek', 'qwen', 'moonshot', 'glm')
    * @param options  模型的额外选项 (如 temperature, model, streaming)
    * @returns LangChain BaseChatModel 实例
    * @throws Error 当提供商不支持或 API Key 未配置时
@@ -40,12 +35,14 @@ export class AiModelFactory {
     const apiKey = this.getApiKey(provider);
 
     switch (provider) {
+      case 'siliconflow':
+        return this.createSiliconFlowModel(apiKey, options);
+      case 'moonshot':
+        return this.createMoonshotModel(apiKey, options);
       case 'deepseek':
         return this.createDeepSeekModel(apiKey, options);
       case 'qwen':
         return this.createQwenModel(apiKey, options);
-      case 'moonshot':
-        return this.createMoonshotModel(apiKey, options);
       case 'glm':
         return this.createZhipuModel(apiKey, options);
       default:
@@ -79,74 +76,130 @@ export class AiModelFactory {
   }
 
   // ============================================================
-  // 工厂方法（LangChain 依赖安装后启用真实实现）
+  // 工厂方法
+  // 基于 EXP-003：统一使用 ChatDeepSeek + baseURL 切换厂商
   // ============================================================
 
-  private createDeepSeekModel(
+  /**
+   * 创建 SiliconFlow（硅基流动）模型
+   *
+   * 硅基流动是模型聚合平台，一个 API Key 可调用多厂商模型。
+   * 模型名称需带厂商前缀，如 MiniMaxAI/MiniMax-M2.5。
+   */
+  private createSiliconFlowModel(
     apiKey: string,
     options: Record<string, unknown>,
   ): BaseChatModel {
-    // TODO: 安装 @langchain/deepseek 后启用
-    // return new ChatDeepSeek({
-    //   apiKey,
-    //   model: options.model || 'deepseek-chat',
-    //   temperature: options.temperature,
-    //   streaming: options.streaming,
-    // });
-    this.logger.debug(
-      `创建 DeepSeek 模型 [model=${(options.model as string) ?? 'deepseek-chat'}]`,
-    );
-    return { provider: 'deepseek', ...options };
+    const model = (options.model as string) || 'Pro/MiniMaxAI/MiniMax-M2.5';
+    this.logger.debug(`创建 SiliconFlow 模型 [model=${model}]`);
+
+    return new ChatDeepSeek({
+      apiKey,
+      model,
+      temperature: options.temperature as number | undefined,
+      streaming: options.streaming as boolean | undefined,
+      maxTokens: options.maxTokens as number | undefined,
+      configuration: {
+        baseURL:
+          this.getBaseUrl('siliconflow') || 'https://api.siliconflow.cn/v1',
+      },
+    });
   }
 
-  private createQwenModel(
-    apiKey: string,
-    options: Record<string, unknown>,
-  ): BaseChatModel {
-    // TODO: 安装 @langchain/community 后启用
-    // return new ChatAlibabaTongyi({
-    //   alibabaApiKey: apiKey,
-    //   model: options.model || 'qwen-turbo',
-    //   temperature: options.temperature,
-    //   streaming: options.streaming,
-    // });
-    this.logger.debug(
-      `创建 Qwen 模型 [model=${(options.model as string) ?? 'qwen-turbo'}]`,
-    );
-    return { provider: 'qwen', ...options };
-  }
-
+  /**
+   * 创建 Moonshot (Kimi) 模型
+   *
+   * 通过 ChatDeepSeek + baseURL 适配（EXP-003），
+   * Moonshot API 完全兼容 OpenAI Chat Completions 格式。
+   */
   private createMoonshotModel(
     apiKey: string,
     options: Record<string, unknown>,
   ): BaseChatModel {
-    // TODO: 安装 @langchain/community 后启用
-    // return new ChatMoonshot({
-    //   apiKey,
-    //   model: options.model || 'moonshot-v1-8k',
-    //   temperature: options.temperature,
-    //   streaming: options.streaming,
-    // });
-    this.logger.debug(
-      `创建 Moonshot 模型 [model=${(options.model as string) ?? 'moonshot-v1-8k'}]`,
-    );
-    return { provider: 'moonshot', ...options };
+    const model = (options.model as string) || 'kimi-k2.5';
+    this.logger.debug(`创建 Moonshot 模型 [model=${model}]`);
+
+    return new ChatDeepSeek({
+      apiKey,
+      model,
+      temperature: options.temperature as number | undefined,
+      streaming: options.streaming as boolean | undefined,
+      maxTokens: options.maxTokens as number | undefined,
+      configuration: {
+        baseURL: this.getBaseUrl('moonshot') || 'https://api.moonshot.cn/v1',
+      },
+    });
   }
 
+  /**
+   * 创建 DeepSeek 模型（原生适配，无需 baseURL 覆盖）
+   */
+  private createDeepSeekModel(
+    apiKey: string,
+    options: Record<string, unknown>,
+  ): BaseChatModel {
+    const model = (options.model as string) || 'deepseek-chat';
+    this.logger.debug(`创建 DeepSeek 模型 [model=${model}]`);
+
+    return new ChatDeepSeek({
+      apiKey,
+      model,
+      temperature: options.temperature as number | undefined,
+      streaming: options.streaming as boolean | undefined,
+      maxTokens: options.maxTokens as number | undefined,
+    });
+  }
+
+  /**
+   * 创建 Qwen (通义千问) 模型
+   *
+   * 通过 ChatDeepSeek + baseURL 适配（EXP-003），
+   * Qwen 的推理功能需通过 modelKwargs 传入 enable_thinking 参数。
+   */
+  private createQwenModel(
+    apiKey: string,
+    options: Record<string, unknown>,
+  ): BaseChatModel {
+    const model = (options.model as string) || 'qwen-plus';
+    this.logger.debug(`创建 Qwen 模型 [model=${model}]`);
+
+    return new ChatDeepSeek({
+      apiKey,
+      model,
+      temperature: options.temperature as number | undefined,
+      streaming: options.streaming as boolean | undefined,
+      maxTokens: options.maxTokens as number | undefined,
+      configuration: {
+        baseURL:
+          this.getBaseUrl('qwen') ||
+          'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      },
+    });
+  }
+
+  /**
+   * 创建智谱 GLM 模型
+   *
+   * 通过 ChatDeepSeek + baseURL 适配（EXP-003），
+   * GLM 的推理功能需通过 modelKwargs 传入 thinking 配置。
+   */
   private createZhipuModel(
     apiKey: string,
     options: Record<string, unknown>,
   ): BaseChatModel {
-    // TODO: 安装 @langchain/community 后启用
-    // return new ChatZhipuAI({
-    //   zhipuAIApiKey: apiKey,
-    //   model: options.model || 'glm-4',
-    //   temperature: options.temperature,
-    //   streaming: options.streaming,
-    // });
-    this.logger.debug(
-      `创建 Zhipu (GLM) 模型 [model=${(options.model as string) ?? 'glm-4'}]`,
-    );
-    return { provider: 'glm', ...options };
+    const model = (options.model as string) || 'glm-4';
+    this.logger.debug(`创建 Zhipu (GLM) 模型 [model=${model}]`);
+
+    return new ChatDeepSeek({
+      apiKey,
+      model,
+      temperature: options.temperature as number | undefined,
+      streaming: options.streaming as boolean | undefined,
+      maxTokens: options.maxTokens as number | undefined,
+      configuration: {
+        baseURL:
+          this.getBaseUrl('glm') || 'https://open.bigmodel.cn/api/paas/v4',
+      },
+    });
   }
 }

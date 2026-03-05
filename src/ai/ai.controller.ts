@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  UseFilters,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -25,6 +26,7 @@ import {
   ReasoningResponseDto,
 } from './dto';
 import { StreamChunk } from './interfaces';
+import { AiExceptionFilter } from './filters/ai-exception.filter';
 import { Public } from 'src/common/decorators/public.decorator';
 
 /**
@@ -34,9 +36,13 @@ import { Public } from 'src/common/decorators/public.decorator';
  * - 非流式对话（适合 Swagger 调试）
  * - 流式对话（SSE 响应）
  * - 推理对话（含思考过程）
+ *
+ * @UseFilters(AiExceptionFilter) 将 LangChain 错误转换为结构化 HTTP 响应，
+ * Service 层不需要 try-catch，保持纯业务逻辑。
  */
 @ApiTags('AI 服务')
 @ApiBearerAuth()
+@UseFilters(AiExceptionFilter)
 @Controller('ai')
 export class AiController {
   private readonly logger = new Logger(AiController.name);

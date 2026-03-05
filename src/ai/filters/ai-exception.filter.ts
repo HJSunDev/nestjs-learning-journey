@@ -1,0 +1,100 @@
+import {
+  ExceptionFilter,
+  Catch,
+  ArgumentsHost,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
+
+/**
+ * LangChain / AI 模型调用异常的统一 HTTP 状态码映射
+ *
+ * 将上游厂商返回的原始状态码转换为对客户端有意义的 HTTP 状态码：
+ * - 401/403：直接透传（认证/权限问题需要调用方感知）
+ * - 429：直接透传（限流信号需要客户端做退避）
+ * - 400：上游认为请求格式无效
+ * - 其他/未知：502 Bad Gateway（表示"我们的上游出了问题"）
+ */
+const UPSTREAM_STATUS_MAP: Record<number, HttpStatus> = {
+  400: HttpStatus.BAD_REQUEST,
+  401: HttpStatus.UNAUTHORIZED,
+  403: HttpStatus.FORBIDDEN,
+  429: HttpStatus.TOO_MANY_REQUESTS,
+};
+
+/**
+ * AI 模块异常过滤器
+ *
+ * 职责：拦截 AiController 中所有未被捕获的异常，
+ * 从 LangChain 错误对象中提取上游状态码和错误信息，
+ * 转换为结构化的 HTTP 响应。
+ *
+ * 设计决策：
+ * - 使用 @Catch() 不带参数，捕获所有异常类型
+ *   （LangChain 抛出的不是标准 Error 子类，无法用具体类型匹配）
+ * - 挂载在 AiController 上而非全局，避免干扰其他模块的异常处理
+ * - Service 层不需要 try-catch，保持纯业务逻辑
+ */
+@Catch()
+export class AiExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(AiExceptionFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
+
+    const { status, message, type } = this.extractErrorInfo(exception);
+    const httpStatus = UPSTREAM_STATUS_MAP[status] ?? HttpStatus.BAD_GATEWAY;
+
+    this.logger.error(
+      `AI 调用失败 [${request.method} ${request.url}]: ${message}`,
+    );
+
+    response.status(httpStatus).json({
+      statusCode: httpStatus,
+      timestamp: new Date().toISOString(),
+      path: request.url,
+      error: type || 'ai_service_error',
+      message,
+    });
+  }
+
+  /**
+   * 从异常对象中提取上游状态码、错误消息和错误类型
+   *
+   * LangChain 的错误对象结构不固定，需要做防御性提取：
+   * - status: 上游 HTTP 状态码（如 401, 429）
+   * - message: 人类可读的错误描述
+   * - type/lc_error_code: 错误分类标识
+   */
+  private extractErrorInfo(exception: unknown): {
+    status: number;
+    message: string;
+    type: string;
+  } {
+    if (typeof exception === 'object' && exception !== null) {
+      const err = exception as Record<string, unknown>;
+      return {
+        status: typeof err.status === 'number' ? err.status : 0,
+        message:
+          typeof err.message === 'string'
+            ? err.message
+            : JSON.stringify(exception),
+        type:
+          typeof err.type === 'string'
+            ? err.type
+            : typeof err.lc_error_code === 'string'
+              ? err.lc_error_code
+              : '',
+      };
+    }
+
+    return {
+      status: 0,
+      message: String(exception),
+      type: '',
+    };
+  }
+}

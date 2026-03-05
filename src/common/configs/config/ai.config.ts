@@ -9,7 +9,8 @@ import { registerAs } from '@nestjs/config';
  * - defaults: 默认生成参数
  *
  * 环境变量说明：
- * - AI_DEFAULT_PROVIDER: 默认提供商 (deepseek | qwen | moonshot | glm)
+ * - AI_DEFAULT_PROVIDER: 默认提供商 (siliconflow | deepseek | qwen | moonshot | glm)
+ * - SILICONFLOW_API_KEY: 硅基流动 API 密钥（模型聚合平台，可调用多厂商模型）
  * - DEEPSEEK_API_KEY: DeepSeek API 密钥
  * - QWEN_API_KEY: 通义千问 API 密钥
  * - MOONSHOT_API_KEY: Moonshot (Kimi) API 密钥
@@ -20,11 +21,18 @@ import { registerAs } from '@nestjs/config';
  */
 export default registerAs('ai', () => ({
   // 默认 AI 提供商
-  defaultProvider: process.env.AI_DEFAULT_PROVIDER || 'moonshot',
+  defaultProvider: process.env.AI_DEFAULT_PROVIDER || 'siliconflow',
 
   // 各提供商配置
   providers: {
-    // DeepSeek（推荐，支持推理模型 deepseek-reasoner）
+    // 硅基流动（模型聚合平台，一个 Key 可调用 MiniMax、DeepSeek、Qwen 等多厂商模型）
+    siliconflow: {
+      apiKey: process.env.SILICONFLOW_API_KEY,
+      baseUrl:
+        process.env.SILICONFLOW_BASE_URL || 'https://api.siliconflow.cn/v1',
+    },
+
+    // DeepSeek（支持推理模型 deepseek-reasoner）
     deepseek: {
       apiKey: process.env.DEEPSEEK_API_KEY,
       baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
@@ -41,8 +49,7 @@ export default registerAs('ai', () => ({
     // Moonshot / Kimi（思考模型如 kimi-k2 支持推理）
     moonshot: {
       apiKey: process.env.MOONSHOT_API_KEY,
-      baseUrl:
-        process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1',
+      baseUrl: process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1',
     },
 
     // 智谱 GLM（思考模型如 glm-z1-thinking 支持推理）
