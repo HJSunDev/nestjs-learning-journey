@@ -451,5 +451,5 @@ curl -N -X POST http://localhost:3000/ai/chat/stream/reasoning \
 >
 > - **LangGraph 智能体构建**：StateGraph、ReAct Agent、工具调用循环
 > - **多智能体协作**：Subgraph、Handoffs、Supervisor 模式
-> - **前端流适配**：Vercel AI SDK Data Stream Protocol 对接
+> - **前端流适配**：Vercel AI SDK Data Stream Protocol 对接 → 方案设计已完成，详见 [040. 前端流适配方案设计](040-vercel-ai-sdk-integration-design.md)
 > - **持久化层**：基于 Redis / PostgreSQL 的 Checkpointer（状态管理）

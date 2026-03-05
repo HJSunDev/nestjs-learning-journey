@@ -93,6 +93,8 @@
   - LangChain 多模型工厂、推理字段归一化 (ReasoningNormalizer)、SSE 流式响应及分层架构设计
 - **[039. gRPC 客户端集成与微服务通信 (gRPC Client Integration)](notes/039-grpc-client-integration.md)**
   - NestJS 与 Go 微服务通信、Proto 契约设计、客户端封装最佳实践及健康检查集成
+- **[040. 前端流适配方案设计 (Vercel AI SDK Integration Design)](notes/040-vercel-ai-sdk-integration-design.md)**
+  - Data Stream Protocol 协议适配、Controller 层双端点架构及 `useChat` 对接方案
 
 
 ## 📝 维护指南

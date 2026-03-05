@@ -131,7 +131,7 @@ export class AiService {
     this.logger.log(`开始流式对话，提供商: ${dto.provider}`);
 
     // 异步执行流处理，不阻塞主线程
-    this.executeStream(model, dto.provider, dto.messages, subject);
+    void this.executeStream(model, dto.provider, dto.messages, subject);
 
     return subject.asObservable();
   }
@@ -153,7 +153,7 @@ export class AiService {
 
     this.logger.log(`开始流式推理对话，提供商: ${dto.provider}`);
 
-    this.executeStream(model, dto.provider, dto.messages, subject, true);
+    void this.executeStream(model, dto.provider, dto.messages, subject, true);
 
     return subject.asObservable();
   }
