@@ -1,3 +1,4 @@
 export * from './provider.interface';
 export * from './tool.interface';
+export * from './model.interface';
 // agent.interface.ts 中的类型预留给 LangGraph 章节，当前无导出

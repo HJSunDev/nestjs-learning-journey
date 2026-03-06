@@ -4,15 +4,17 @@ import type { AIMessageChunk } from '@langchain/core/messages';
 import { AiModelFactory } from './factories/model.factory';
 import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { convertToLangChainMessages } from './utils';
-import { MessageRole, StreamChunkType } from './constants';
+import { AiProvider, MessageRole, StreamChunkType } from './constants';
+import { MODEL_REGISTRY } from './constants/model-registry';
 import {
   ChatRequestDto,
   QuickChatRequestDto,
   ChatResponseDto,
   ReasoningResponseDto,
+  ModelListResponseDto,
 } from './dto';
 import { Observable, Subject } from 'rxjs';
-import { StreamChunk } from './interfaces';
+import { StreamChunk, ModelDefinition } from './interfaces';
 
 /**
  * AI 服务层
@@ -28,6 +30,25 @@ export class AiService {
     private readonly modelFactory: AiModelFactory,
     private readonly reasoningNormalizer: ReasoningNormalizer,
   ) {}
+
+  /**
+   * 获取可用模型列表
+   *
+   * @param provider 可选，按 API 提供商筛选
+   * @returns 模型列表及总数
+   */
+  getAvailableModels(provider?: AiProvider): ModelListResponseDto {
+    let models: readonly ModelDefinition[] = MODEL_REGISTRY;
+
+    if (provider) {
+      models = models.filter((m) => m.provider === provider);
+    }
+
+    return {
+      models: models as ModelDefinition[],
+      total: models.length,
+    };
+  }
 
   /**
    * 标准对话（非流式）
@@ -182,11 +203,13 @@ export class AiService {
       const stream = await model.stream(messages);
 
       for await (const chunk of stream) {
+        // 不同 provider 返回的 chunk 结构各异，统一归一化后再分发
         const normalized = this.reasoningNormalizer.normalize(
           provider,
           chunk as unknown as Record<string, unknown>,
         );
 
+        // reasoning 和 content 可能同时存在于一个 chunk 中，需分别推送
         if (normalized.reasoning && includeReasoning) {
           subject.next({
             type: StreamChunkType.REASONING,
@@ -202,6 +225,7 @@ export class AiService {
         }
       }
 
+      // 流消费完毕，发送 DONE 信号并关闭 Subject，触发 SSE 连接结束
       subject.next({ type: StreamChunkType.DONE });
       subject.complete();
     } catch (error) {
@@ -215,11 +239,26 @@ export class AiService {
   }
 
   /**
-   * 从 AIMessage 的 response_metadata 中提取 Token 使用统计
+   * 提取 Token 使用统计
+   *
+   * 优先读取 LangChain 跨厂商标准化的 usage_metadata 字段，
+   * 若不存在则回退到 response_metadata.tokenUsage（部分厂商的非标准路径）。
+   * usage_metadata 由各 LangChain Provider 包内部归一化填充，结构稳定。
    */
   private extractTokenUsage(
     result: AIMessageChunk,
   ): ChatResponseDto['usage'] | undefined {
+    // LangChain 标准化字段（推荐路径）
+    const usageMeta = result.usage_metadata;
+    if (usageMeta) {
+      return {
+        promptTokens: usageMeta.input_tokens ?? 0,
+        completionTokens: usageMeta.output_tokens ?? 0,
+        totalTokens: usageMeta.total_tokens ?? 0,
+      };
+    }
+
+    // 兜底：部分 Provider 仅在 response_metadata 中填充 token 统计
     const metadata = result.response_metadata as
       | Record<string, unknown>
       | undefined;

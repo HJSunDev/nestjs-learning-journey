@@ -1,7 +1,9 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
+  Query,
   Res,
   HttpCode,
   HttpStatus,
@@ -12,6 +14,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
+  ApiQuery,
   ApiBearerAuth,
   ApiProduces,
 } from '@nestjs/swagger';
@@ -24,15 +27,18 @@ import {
   QuickChatRequestDto,
   ChatResponseDto,
   ReasoningResponseDto,
+  ModelListResponseDto,
 } from './dto';
 import { StreamChunk } from './interfaces';
 import { AiExceptionFilter } from './filters/ai-exception.filter';
 import { Public } from 'src/common/decorators/public.decorator';
+import { AiProvider } from './constants';
 
 /**
  * AI 服务控制器
  *
  * 提供 AI 对话相关的 HTTP 端点：
+ * - 模型列表查询
  * - 非流式对话（适合 Swagger 调试）
  * - 流式对话（SSE 响应）
  * - 推理对话（含思考过程）
@@ -48,6 +54,38 @@ export class AiController {
   private readonly logger = new Logger(AiController.name);
 
   constructor(private readonly aiService: AiService) {}
+
+  // ============================================================
+  // 模型查询端点
+  // ============================================================
+
+  /**
+   * 获取可用模型列表
+   */
+  @Public()
+  @Get('models')
+  @ApiOperation({
+    summary: '获取可用模型列表',
+    description: '返回所有已注册的可用模型，支持按提供商筛选',
+  })
+  @ApiQuery({
+    name: 'provider',
+    required: false,
+    enum: AiProvider,
+    description: '按 API 提供商筛选',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '模型列表',
+    type: ModelListResponseDto,
+  })
+  getModels(@Query('provider') provider?: AiProvider): ModelListResponseDto {
+    return this.aiService.getAvailableModels(provider);
+  }
+
+  // ============================================================
+  // 对话端点
+  // ============================================================
 
   /**
    * 标准对话（非流式）
