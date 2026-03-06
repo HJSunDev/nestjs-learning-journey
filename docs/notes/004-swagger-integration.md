@@ -21,6 +21,7 @@ Swagger 通过装饰器收集元数据，不同装饰器有明确的作用域要
 作用于具体的方法（路由），用于描述单个接口。
 *   `@ApiOperation({ summary: '描述' })`：接口的简要说明。
 *   `@ApiResponse({ status: 200 })`：描述返回结果。
+*   `@ApiQuery({ name, required, enum, description })`：描述 URL 查询参数（`?key=value`）。当方法通过 `@Query()` 接收查询参数时，需要用 `@ApiQuery` 告诉 Swagger 这个参数的名称、类型、是否必填等信息，否则文档中不会显示该参数。如果参数是枚举类型，传入 `enum` 选项后 Swagger UI 会渲染为下拉选择框。
 *   **顺序规则**：在同一个方法上，`@Get`/`@Post` 与 Swagger 装饰器的上下顺序**互不影响**。
     *   *建议风格*：将 Swagger 描述放在最上方，NestJS 路由装饰器放在最靠近方法名的位置（下方）。
 
@@ -38,6 +39,11 @@ export class UserController {
   @ApiResponse({ status: 201, description: '创建成功' }) // 3. 响应
   @Post() // 4. 路由 (建议放最后，紧贴方法)
   create(@Body() dto: CreateUserDto) { ... }
+
+  @ApiOperation({ summary: '获取用户列表' })
+  @ApiQuery({ name: 'role', required: false, enum: UserRole, description: '按角色筛选' })
+  @Get()
+  findAll(@Query('role') role?: UserRole) { ... }
 }
 ```
 

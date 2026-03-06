@@ -52,6 +52,9 @@
 │  ┌─────────┐ ┌──────────────┐ ┌──────────────────┐  │
 │  │ /chat   │ │ /chat/stream │ │ /chat/reasoning  │  │
 │  └─────────┘ └──────────────┘ └──────────────────┘  │
+│  ┌───────────────────────────────────────────────┐  │
+│  │ AiExceptionFilter (LangChain 异常 → HTTP 响应) │  │
+│  └───────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────┤
 │                  Business Layer                     │
 │               AiService (编排、调度)                 │
@@ -93,6 +96,9 @@ src/ai/
 │   ├── chat-request.dto.ts      # ChatRequestDto, QuickChatRequestDto
 │   └── chat-response.dto.ts     # ChatResponseDto, ReasoningResponseDto
 │
+├── filters/                     # 异常过滤器
+│   └── ai-exception.filter.ts   # AiExceptionFilter: LangChain 异常 → 结构化 HTTP 响应
+│
 ├── constants/                   # 常量与枚举
 │   └── ai.constants.ts          # AiProvider, StreamChunkType, MessageRole
 │
@@ -124,6 +130,7 @@ src/ai/
 | 组件                    | 职责                                              | 依赖                                        |
 | :---------------------- | :------------------------------------------------ | :------------------------------------------ |
 | `AiController`        | HTTP 端点，SSE 响应头设置，Observable → SSE 桥接 | `AiService`                               |
+| `AiExceptionFilter`   | 拦截 LangChain 非标准异常，映射为结构化 HTTP 响应 | 无（挂载于 Controller 层）                  |
 | `AiService`           | 业务编排，调度 Factory 和 Normalizer              | `AiModelFactory`, `ReasoningNormalizer` |
 | `AiModelFactory`      | 按提供商 + 配置创建 LangChain Model 实例          | `ConfigService`                           |
 | `ReasoningNormalizer` | 从 AIMessage(Chunk) 中提取推理字段，输出统一结构  | 无                                          |
@@ -207,7 +214,71 @@ for await (const chunk of stream) {
 }
 ```
 
-### 3.3 SSE 流式响应
+### 3.3 异常边界适配 (AiExceptionFilter)
+
+**解决的核心问题**：
+
+全局 `HttpExceptionFilter` 使用 `@Catch(HttpException)` 只捕获 NestJS 体系内的 `HttpException` 及其子类。然而 LangChain 抛出的错误**不继承自 `HttpException`**——它们是 LangChain 自有的错误对象，携带上游厂商的原始状态码和错误信息，但不符合 NestJS 异常接口。
+
+当 LangChain 错误未被捕获时，NestJS 的内置兜底处理器会返回通用的 `500 Internal Server Error`，**丢失所有上游错误语义**（如 401 密钥错误、429 限流、400 参数无效）。
+
+**设计要点**：
+
+1. **`@Catch()` 不传参数**：捕获所有异常类型，因为 LangChain 的错误不是标准 `Error` 子类，无法用具体类型匹配
+2. **Controller 级别挂载**：通过 `@UseFilters(AiExceptionFilter)` 仅作用于 `AiController`，避免干扰其他模块的 `HttpException` 处理链
+3. **防御性字段提取**：LangChain 错误对象结构不固定，通过逐字段类型检测提取 `status`、`message`、`type`
+4. **上游状态码映射**：将上游 HTTP 状态码转换为对客户端有意义的响应码，未知状态码默认 `502 Bad Gateway`（语义："上游服务出了问题"，而非 500 暗示自身代码有 Bug）
+
+**异常处理链路**：
+
+```
+AiController 中抛出异常
+  ↓
+@UseFilters(AiExceptionFilter)  ← @Catch() 匹配一切
+  ↓ 命中
+extractErrorInfo() 提取上游 status/message/type
+  ↓
+UPSTREAM_STATUS_MAP 映射 → 401/403/429 直接透传，其他 → 502
+  ↓
+结构化 JSON 响应 { statusCode, timestamp, path, error, message }
+```
+
+**上游状态码映射表**：
+
+| 上游状态码 | 映射后 HTTP 状态码 | 语义                         |
+| :--------- | :------------------ | :--------------------------- |
+| 400        | 400 Bad Request     | 上游认为请求格式无效         |
+| 401        | 401 Unauthorized    | 认证失败（如 API Key 错误）  |
+| 403        | 403 Forbidden       | 权限不足                     |
+| 429        | 429 Too Many Reqs   | 限流（客户端需做退避重试）   |
+| 其他/未知  | 502 Bad Gateway     | 上游服务异常                 |
+
+**非流式 vs 流式的错误处理差异**：
+
+- **非流式端点**（`/chat`、`/chat/reasoning`）：异常由 `AiExceptionFilter` 拦截，返回带正确状态码的 JSON 错误响应
+- **流式端点**（`/chat/stream`）：一旦 SSE 响应头已发送（HTTP 200），无法再改变状态码。因此 `AiService.executeStream()` 内部 try-catch 错误，通过 SSE `error` 事件推送给客户端
+
+```typescript
+// 非流式：AiExceptionFilter 自动拦截，Service 层无需 try-catch
+async chat(dto: ChatRequestDto): Promise<ChatResponseDto> {
+  const model = this.modelFactory.createChatModel(dto.provider, { ... });
+  const result = await model.invoke(messages); // 异常直接上抛
+  return { content: normalized.content };
+}
+
+// 流式：已开始写入 SSE，必须在 Service 层 catch 并通过事件推送
+private async executeStream(model, provider, messages, subject) {
+  try {
+    const stream = await model.stream(messages);
+    for await (const chunk of stream) { /* ... */ }
+  } catch (error) {
+    subject.next({ type: StreamChunkType.ERROR, error: error.message });
+    subject.complete();
+  }
+}
+```
+
+### 3.4 SSE 流式响应
 
 **设计要点**：
 
@@ -215,6 +286,7 @@ for await (const chunk of stream) {
 - NestJS 的 SSE 基于 RxJS `Observable`
 - 中间的转换链路：`AsyncIterable → ReasoningNormalizer → Subject → Observable → SSE`
 - Controller 中的 `setupSseStream()` 辅助方法封装了响应头设置、订阅管理和断连清理
+- 流式错误处理策略见 3.3 节「非流式 vs 流式的错误处理差异」
 
 **StreamChunkType 枚举（SSE 事件类型）**：
 
@@ -295,6 +367,8 @@ Client → POST /ai/chat/stream { provider: 'qwen', messages: [msg1, msg2, ...] 
 4. **枚举约束**：请求 DTO 中使用 `AiProvider` 枚举校验，将无效提供商拦截在校验层
 5. **SSE 规范**：设置 `X-Accel-Buffering: no` 响应头，避免 Nginx 等反向代理缓冲 SSE 流
 6. **断连清理**：SSE 端点中监听 `res.on('close')`，客户端断连时取消 Observable 订阅
+7. **异常边界隔离**：通过 Controller 级 `@UseFilters` 处理第三方库异常，Service 层保持纯业务逻辑，不写 try-catch（流式端点除外，因 SSE 已发送响应头）
+8. **上游状态码语义透传**：对客户端有意义的上游状态码（401/403/429）直接透传，未知错误用 502 而非 500，准确区分"我们的上游出了问题"和"我们自身代码有 Bug"
 
 ### ❌ 避免做法
 
@@ -302,6 +376,8 @@ Client → POST /ai/chat/stream { provider: 'qwen', messages: [msg1, msg2, ...] 
 2. **不要自行实现 Provider 抽象层**：LangChain 的 `BaseChatModel` 已经是工业级的 Provider 抽象
 3. **不要自行实现 Agent/Orchestrator 接口**：智能体编排由 LangGraph 的 StateGraph 负责
 4. **不要硬编码推理字段路径**：厂商可能在后续版本变更字段位置，统一由归一化层维护
+5. **不要在 Service 层手动 try-catch 非流式调用的 LangChain 错误**：这会导致异常处理逻辑分散，应由 `AiExceptionFilter` 在 Controller 层统一拦截
+6. **不要将 `@Catch()` 全捕获过滤器注册为全局**：会抢夺其他模块的 `HttpException` 处理权，应通过 `@UseFilters` 限定在特定 Controller
 
 ---
 

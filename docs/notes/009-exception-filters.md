@@ -150,6 +150,7 @@ export class UserService {
 -   ✅ **全局注册**: 既然是“统一”异常处理，通常在 `main.ts` 中使用 `app.useGlobalFilters(new HttpExceptionFilter())` 进行全局注册。
 -   ✅ **区分环境**: 可以在 Filter 里判断 `process.env.NODE_ENV`，如果是开发环境，把 `exception.stack` (堆栈信息) 也打印到 JSON 里方便调试；生产环境则隐藏。
 -   ❌ **捕获范围过大**: 如果把 `@Catch()` 留空，它会捕获所有错误（包括代码写错导致的 `RuntimeError`）。处理不当可能导致死循环或掩盖关键 Bug。通常建议只捕获 `HttpException`，或者分开写两个 Filter（一个处理 HTTP 错误，一个处理系统级崩溃）。
+-   ⚠️ **第三方库异常的盲区**: `@Catch(HttpException)` 只能捕获 NestJS 体系内的异常。当集成的第三方库（如 LangChain、Stripe SDK、gRPC 客户端等）抛出自有错误类型时，这些错误**不继承自 `HttpException`**，会穿透全局 Filter，被 NestJS 内置兜底处理器返回为通用 `500 Internal Server Error`，丢失所有有意义的错误信息。解决方案是在对应 Controller 上使用 `@UseFilters` 挂载专属的 `@Catch()` 全捕获过滤器，做异常体系的边界适配。实际案例见 [038. AI 服务模块架构设计](038-ai-service-architecture.md) 的 3.3 节。
 -   ❌ **忘记 `switchToHttp`**: 在使用 WebSocket 或 Microservices 时，直接用 `ctx.getResponse()` 可能会报错，因为上下文类型不同。
 
 ---

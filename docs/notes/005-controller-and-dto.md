@@ -52,6 +52,23 @@ export class UserController {
 }
 ```
 
+**`@Query` 装饰器详解**：
+
+`@Query('key')` 从 URL 的查询字符串（`?` 后面的部分）中提取指定参数的值。
+
+```
+请求: GET /users?page=2&limit=10
+
+@Query('page')  page   → '2'    // 提取单个参数
+@Query('limit') limit  → '10'
+@Query()        query  → { page: '2', limit: '10' }  // 不传 key，提取整个查询对象
+```
+
+关键注意点：
+- URL 查询参数在 HTTP 传输中**始终是字符串**，即使写了 `page: number`，实际拿到的是 `'2'` 而非 `2`。需要手动转换（`+page`）或通过 `ValidationPipe` 的 `transform: true` 配合 `class-transformer` 的 `@Type(() => Number)` 自动转换。
+- `@Query('key')` 提取单个参数；`@Query()` 不传参时将整个查询字符串映射到一个 DTO 对象，适合参数较多的场景（如分页，详见 [015. 分页实现](015-pagination-implementation.md)）。
+- `@Query` 与 `@Param` 的区别：`@Param` 提取路径中的动态段（`/users/:id`），`@Query` 提取 `?` 后的键值对。
+
 ### 3.2 DTO 的最佳实践结构
 
 ```typescript
