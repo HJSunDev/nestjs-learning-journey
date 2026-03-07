@@ -19,7 +19,6 @@ import {
   ApiProduces,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { Observable } from 'rxjs';
 
 import { AiService } from './ai.service';
 import {
@@ -29,10 +28,10 @@ import {
   ReasoningResponseDto,
   ModelListResponseDto,
 } from './dto';
-import { StreamChunk } from './interfaces';
 import { AiExceptionFilter } from './filters/ai-exception.filter';
 import { Public } from 'src/common/decorators/public.decorator';
 import { AiProvider } from './constants';
+import { AiStreamAdapter } from './adapters/stream.adapter';
 
 /**
  * AI 服务控制器
@@ -42,6 +41,7 @@ import { AiProvider } from './constants';
  * - 非流式对话（适合 Swagger 调试）
  * - 流式对话（SSE 响应）
  * - 推理对话（含思考过程）
+ * - Vercel AI SDK 适配端点（UIMessageStream 协议）
  *
  * @UseFilters(AiExceptionFilter) 将 LangChain 错误转换为结构化 HTTP 响应，
  * Service 层不需要 try-catch，保持纯业务逻辑。
@@ -53,7 +53,10 @@ import { AiProvider } from './constants';
 export class AiController {
   private readonly logger = new Logger(AiController.name);
 
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly aiService: AiService,
+    private readonly streamAdapter: AiStreamAdapter,
+  ) {}
 
   // ============================================================
   // 模型查询端点
@@ -153,16 +156,9 @@ export class AiController {
    * 流式对话（SSE）
    *
    * 使用 Server-Sent Events 实时推送 AI 响应
-   * 注意：Swagger UI 无法展示流式响应，请使用 curl 或前端代码测试
-   *
-   * @example curl 测试命令
-   * ```bash
-   * curl -N -X POST http://localhost:3000/ai/chat/stream \
-   *   -H "Content-Type: application/json" \
-   *   -H "Authorization: Bearer <token>" \
-   *   -d '{"provider":"deepseek","model":"deepseek-chat","messages":[{"role":"user","content":"你好"}]}'
-   * ```
+   * 注意：Swagger UI 无法展示流式响应，请使用 curl 或 ApiPost 等工具测试
    */
+  @Public()
   @Post('chat/stream')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -187,7 +183,11 @@ export class AiController {
   })
   streamChat(@Body() dto: ChatRequestDto, @Res() res: Response): void {
     const stream$ = this.aiService.streamChat(dto);
-    this.setupSseStream(res, stream$, '流式对话', dto.provider, dto.model);
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: '流式对话',
+      provider: dto.provider,
+      model: dto.model,
+    });
   }
 
   /**
@@ -195,6 +195,7 @@ export class AiController {
    *
    * 流式返回思考过程和最终回答
    */
+  @Public()
   @Post('chat/stream/reasoning')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -208,63 +209,50 @@ export class AiController {
   })
   streamReasoningChat(@Body() dto: ChatRequestDto, @Res() res: Response): void {
     const stream$ = this.aiService.streamReasoningChat(dto);
-    this.setupSseStream(res, stream$, '流式推理对话', dto.provider, dto.model);
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: '流式推理对话',
+      provider: dto.provider,
+      model: dto.model,
+    });
   }
 
   // ============================================================
-  // SSE 辅助方法
+  // Vercel AI SDK 适配端点（UIMessageStream 协议）
   // ============================================================
 
   /**
-   * 设置 SSE 流式响应
+   * 流式对话（Vercel AI SDK v6 协议）
    *
-   * 将 Observable<StreamChunk> 桥接到 HTTP Response 的 SSE 输出。
-   * 提取此方法以消除 streamChat 和 streamReasoningChat 中的重复代码。
+   * 输出 UIMessageStream 格式的 SSE 事件，供前端 useChat Hook 消费。
    *
-   * @param res       Express Response 对象
-   * @param stream$   StreamChunk 的 Observable 流
-   * @param label     日志标签（用于区分不同类型的流式调用）
-   * @param provider  提供商标识（日志用途）
-   * @param model     模型名称（日志用途）
+   * 设计决策：手写协议而非依赖 ai 包的服务端工具函数，
+   * 因为 ai 包的服务端 API 在大版本间变动剧烈（v4 createDataStream → v6 createUIMessageStream），
+   * 而协议格式本身（JSON-over-SSE）简单且稳定，手写可避免后端被前端包版本绑定。
    */
-  private setupSseStream(
-    res: Response,
-    stream$: Observable<StreamChunk>,
-    label: string,
-    provider: string,
-    model: string,
+  @Public()
+  @Post('chat/stream/ai-sdk')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '流式对话（Vercel AI SDK 协议）',
+    description: '输出 UIMessageStream 格式，供前端 useChat Hook 消费',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiResponse({
+    status: 200,
+    description: 'UIMessageStream SSE 响应',
+  })
+  streamForVercelAiSdk(
+    @Body() dto: ChatRequestDto,
+    @Res() res: Response,
   ): void {
-    // SSE 标准响应头
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    // 禁用 Nginx 缓冲（生产环境反向代理时需要）
-    res.setHeader('X-Accel-Buffering', 'no');
+    const stream$ = dto.enableReasoning
+      ? this.aiService.streamReasoningChat(dto)
+      : this.aiService.streamChat(dto);
 
-    this.logger.debug(`开始${label}: provider=${provider}, model=${model}`);
-
-    const subscription = stream$.subscribe({
-      next: (chunk: StreamChunk) => {
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      },
-      error: (error: Error) => {
-        this.logger.error(`${label}错误`, error.stack);
-        res.write(
-          `data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`,
-        );
-        res.end();
-      },
-      complete: () => {
-        this.logger.debug(`${label}完成`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-      },
-    });
-
-    // 客户端断开连接时取消订阅，释放资源
-    res.on('close', () => {
-      this.logger.debug('客户端断开连接');
-      subscription.unsubscribe();
+    this.streamAdapter.pipeUIMessageStream(res, stream$, {
+      label: '流式对话',
+      provider: dto.provider,
+      model: dto.model,
     });
   }
 }

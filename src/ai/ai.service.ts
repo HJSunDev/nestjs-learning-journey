@@ -205,7 +205,7 @@ export class AiService {
       `开始流式推理对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
     );
 
-    void this.executeStream(model, dto.provider, messages, subject, true);
+    void this.executeStream(model, dto.provider, messages, subject);
 
     return subject.asObservable();
   }
@@ -267,12 +267,21 @@ export class AiService {
     provider: string,
     messages: ReturnType<typeof convertToLangChainMessages>,
     subject: Subject<StreamChunk>,
-    includeReasoning = false,
   ) {
     try {
       const stream = await model.stream(messages);
 
+      let usage: ReturnType<typeof this.extractTokenUsage>;
+      let finishReason: string | undefined;
+
       for await (const chunk of stream) {
+        // 提取流式块中的 token 统计和结束原因（通常在最后一个 chunk 中出现）
+        const currentUsage = this.extractTokenUsage(chunk);
+        if (currentUsage) usage = currentUsage;
+
+        const currentFinishReason = this.extractFinishReason(chunk);
+        if (currentFinishReason) finishReason = currentFinishReason;
+
         // 不同 provider 返回的 chunk 结构各异，统一归一化后再分发
         const normalized = this.reasoningNormalizer.normalize(
           provider,
@@ -280,7 +289,7 @@ export class AiService {
         );
 
         // reasoning 和 content 可能同时存在于一个 chunk 中，需分别推送
-        if (normalized.reasoning && includeReasoning) {
+        if (normalized.reasoning) {
           subject.next({
             type: StreamChunkType.REASONING,
             content: normalized.reasoning,
@@ -295,8 +304,12 @@ export class AiService {
         }
       }
 
-      // 流消费完毕，发送 DONE 信号并关闭 Subject，触发 SSE 连接结束
-      subject.next({ type: StreamChunkType.DONE });
+      // 流消费完毕，发送 DONE 信号并附带元数据，关闭 Subject，触发 SSE 连接结束
+      subject.next({
+        type: StreamChunkType.DONE,
+        usage,
+        finishReason,
+      });
       subject.complete();
     } catch (error) {
       this.logger.error('流式处理发生错误', error);

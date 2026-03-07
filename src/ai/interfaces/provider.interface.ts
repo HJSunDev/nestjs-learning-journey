@@ -20,7 +20,7 @@ export interface Message {
  */
 export interface StreamChunk {
   /** 块类型 */
-  type: StreamChunkType | string;
+  type: StreamChunkType;
   /** 文本内容（text/reasoning 类型） */
   content?: string;
   /** 工具调用信息（tool_call 类型） */
@@ -29,6 +29,10 @@ export interface StreamChunk {
   toolResult?: ToolResultInfo;
   /** 错误信息（error 类型） */
   error?: string;
+  /** Token 使用统计（通常在 done 类型的块中返回） */
+  usage?: TokenUsage;
+  /** 完成原因（通常在 done 类型的块中返回） */
+  finishReason?: string;
 }
 
 /**

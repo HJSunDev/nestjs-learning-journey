@@ -6,6 +6,7 @@ import { ToolRegistry } from './tools/tool.registry';
 import { AiModelFactory } from './factories/model.factory';
 import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { AgentRegistry } from './agents/agent.registry';
+import { AiStreamAdapter } from './adapters/stream.adapter';
 
 /**
  * AI 模块
@@ -31,6 +32,7 @@ import { AgentRegistry } from './agents/agent.registry';
     ReasoningNormalizer,
     ToolRegistry,
     AgentRegistry,
+    AiStreamAdapter,
   ],
   exports: [AiService, ReasoningNormalizer, ToolRegistry, AgentRegistry],
 })

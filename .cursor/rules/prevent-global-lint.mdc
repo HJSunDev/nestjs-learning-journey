@@ -1,0 +1,21 @@
+---
+description: 限制全局代码格式化和 Lint，防止意外修改大量文件
+alwaysApply: true
+---
+# 全局 Lint 与格式化限制 (Linting and Formatting Restrictions)
+
+为了防止意外修改非工作区的大量文件，引发不可控的代码变更并污染 Git 提交历史，你必须严格遵守以下执行规范：
+
+## 1. 绝对禁止全局执行 (Strictly Forbidden)
+- ❌ **严禁**执行 `npm run lint`、`yarn lint` 等定义在 `package.json` 中的全局扫描修复脚本。
+- ❌ **严禁**执行 `npm run format`、`prettier --write .` 等全局代码格式化命令。
+- ❌ **严禁**使用 `eslint . --fix` 或 `eslint "src/**/*.ts" --fix` 等大范围扫描命令。
+
+## 2. 强制局部精确修复 (Mandatory Local Target)
+当你需要通过终端修复自己刚刚编写或修改的代码带来的 lint 错误时，**只能**对你确切修改过的具体文件执行命令。
+- ✅ **正确操作**：`npx eslint src/ai/ai.controller.ts --fix`
+- ✅ **正确操作**：`npx prettier --write src/ai/adapters/stream.adapter.ts`
+
+## 3. 核心原则
+- **最小化影响半径**：我们只关注当前正在开发或修复的功能模块，绝不主动去“清理”或“格式化”其他历史遗留代码，除非用户明确要求。
+- **尊重现有代码库**：保持其他模块原封不动，保证项目协同开发的稳定性。
