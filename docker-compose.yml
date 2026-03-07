@@ -6,10 +6,17 @@ version: '3.8'
 # - 开发工具服务：pgadmin, redis-insight（dev profile）
 # - 应用服务：app（prod profile）
 # 
-# 使用方式：
+# 使用方式
 # - 本地开发：docker compose --profile dev up -d（数据库 + 可视化工具）
 # - 生产部署：docker compose --profile prod up -d --build（应用 + 数据库）
 # - 仅数据库：docker compose up -d（最简模式）
+#
+#（已封装为 npm scripts）：
+# - 仅数据库：npm run docker:db   （最简模式，只启动数据库）
+# - 本地开发：npm run docker:dev  （数据库 + 可视化工具）
+# - 生产部署：npm run docker:prod （应用 + 数据库，自动构建镜像）
+# - 停止所有：npm run docker:down
+#
 # ============================================================
 
 services:

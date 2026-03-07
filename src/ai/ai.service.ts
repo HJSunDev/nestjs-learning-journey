@@ -4,7 +4,12 @@ import type { AIMessageChunk } from '@langchain/core/messages';
 import { AiModelFactory } from './factories/model.factory';
 import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { convertToLangChainMessages } from './utils';
-import { AiProvider, MessageRole, StreamChunkType } from './constants';
+import {
+  AiProvider,
+  MessageRole,
+  ReasoningMode,
+  StreamChunkType,
+} from './constants';
 import { MODEL_REGISTRY } from './constants/model-registry';
 import {
   ChatRequestDto,
@@ -61,10 +66,16 @@ export class AiService {
       `调用聊天接口，提供商: ${dto.provider}, 模型: ${dto.model}`,
     );
 
+    const modelKwargs = this.resolveModelKwargs(
+      dto.provider,
+      dto.model,
+      dto.enableReasoning,
+    );
     const model = this.modelFactory.createChatModel(dto.provider, {
       model: dto.model,
       temperature: dto.temperature,
       maxTokens: dto.maxTokens,
+      modelKwargs,
     });
 
     const messages = convertToLangChainMessages(dto.messages, dto.systemPrompt);
@@ -101,7 +112,9 @@ export class AiService {
   /**
    * 推理对话（非流式）
    *
-   * 使用支持思维链的模型，返回推理过程和最终答案。
+   * 强制开启推理模式，返回推理过程和最终答案。
+   * 对 hybrid 模型会自动注入推理参数；对 always 模型无额外效果；
+   * 对 none 模型，工厂不会注入参数，但模型本身不会产生推理输出。
    *
    * @param dto 对话请求参数
    * @returns 包含推理过程的响应
@@ -111,10 +124,12 @@ export class AiService {
       `调用推理聊天接口，提供商: ${dto.provider}, 模型: ${dto.model}`,
     );
 
+    const modelKwargs = this.resolveModelKwargs(dto.provider, dto.model, true);
     const model = this.modelFactory.createChatModel(dto.provider, {
       model: dto.model,
       temperature: dto.temperature,
       maxTokens: dto.maxTokens,
+      modelKwargs,
     });
 
     const messages = convertToLangChainMessages(dto.messages, dto.systemPrompt);
@@ -140,10 +155,16 @@ export class AiService {
    */
   streamChat(dto: ChatRequestDto): Observable<StreamChunk> {
     const subject = new Subject<StreamChunk>();
+    const modelKwargs = this.resolveModelKwargs(
+      dto.provider,
+      dto.model,
+      dto.enableReasoning,
+    );
     const model = this.modelFactory.createChatModel(dto.provider, {
       model: dto.model,
       streaming: true,
       maxTokens: dto.maxTokens,
+      modelKwargs,
     });
 
     const messages = convertToLangChainMessages(dto.messages, dto.systemPrompt);
@@ -162,13 +183,20 @@ export class AiService {
    *
    * @param dto 对话请求参数
    * @returns StreamChunk 的 Observable 流
+   *
+   * 强制开启推理模式，返回推理过程和最终答案。
+   * 对 hybrid 模型会自动注入推理参数；对 always 模型无额外效果；
+   * 对 none 模型，工厂不会注入参数，但模型本身不会产生推理输出。
+   *
    */
   streamReasoningChat(dto: ChatRequestDto): Observable<StreamChunk> {
     const subject = new Subject<StreamChunk>();
+    const modelKwargs = this.resolveModelKwargs(dto.provider, dto.model, true);
     const model = this.modelFactory.createChatModel(dto.provider, {
       model: dto.model,
       streaming: true,
       maxTokens: dto.maxTokens,
+      modelKwargs,
     });
 
     const messages = convertToLangChainMessages(dto.messages, dto.systemPrompt);
@@ -185,6 +213,48 @@ export class AiService {
   // ============================================================
   // 内部方法
   // ============================================================
+
+  /**
+   * 根据模型能力和请求意图解析推理参数
+   *
+   * 职责：将业务语义（enableReasoning）转换为技术参数（modelKwargs）。
+   * 仅当 enableReasoning=true 且模型为 hybrid 模式时，
+   * 从 ModelDefinition.reasoningKwargs 中提取参数传给工厂。
+   *
+   * - ALWAYS 模型：推理始终开启，无需额外参数
+   * - HYBRID 模型：需要注入 reasoningKwargs 才能激活推理
+   * - NONE   模型：不具备推理能力，忽略请求
+   */
+  private resolveModelKwargs(
+    provider: AiProvider,
+    modelId: string,
+    enableReasoning?: boolean,
+  ): Record<string, unknown> | undefined {
+    if (!enableReasoning) return undefined;
+
+    // 查找模型定义信息
+    const modelDef = this.findModelDefinition(provider, modelId);
+    if (
+      modelDef?.capabilities.reasoningMode === ReasoningMode.HYBRID &&
+      modelDef.reasoningKwargs
+    ) {
+      return modelDef.reasoningKwargs;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * 从注册表中查找模型定义
+   */
+  private findModelDefinition(
+    provider: AiProvider,
+    modelId: string,
+  ): ModelDefinition | undefined {
+    return MODEL_REGISTRY.find(
+      (m) => m.id === modelId && m.provider === provider,
+    );
+  }
 
   /**
    * 处理 LangChain 流并推送到 RxJS Subject

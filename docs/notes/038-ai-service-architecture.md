@@ -16,7 +16,7 @@
 | 概念                          | 角色       | 说明                                                                                 |
 | :---------------------------- | :--------- | :----------------------------------------------------------------------------------- |
 | **LangChain Core**      | 模型抽象层 | 提供 `BaseChatModel`、`Runnable`、`Message` 等核心抽象，统一不同厂商的模型接口 |
-| **AiModelFactory**      | 工厂层     | 按配置动态实例化对应厂商的 LangChain Model，封装 API Key / Base URL 等细节           |
+| **AiModelFactory**      | 工厂层     | 委托协议适配器创建 LangChain Model，封装 API Key / Base URL 等细节                  |
 | **ReasoningNormalizer** | 归一化层   | 从各厂商的 LangChain 输出中提取推理字段，输出统一的 `{ content, reasoning }` 结构  |
 | **LangGraph**           | Agent 框架 | 构建有状态的智能体应用（Stateful, Multi-Actor Applications），详见后续章节           |
 | **Vercel AI SDK**       | 前端适配   | 提供 `useChat` 等前端消费协议，后端需做流格式适配（后续章节）                      |
@@ -32,12 +32,26 @@
 
 ### 模型厂商接入表 (LangChain JS)
 
-| 厂商                      | LangChain 类          | 来源包                   | 推理字段路径                            | 启用方式                                |
-| :------------------------ | :-------------------- | :----------------------- | :-------------------------------------- | :-------------------------------------- |
-| **DeepSeek**        | `ChatDeepSeek`      | `@langchain/deepseek`  | `additional_kwargs.reasoning_content` | 使用推理模型 (如 `deepseek-reasoner`) |
-| **Qwen / 通义**     | `ChatAlibabaTongyi` | `@langchain/community` | `additional_kwargs.reasoning_content` | 参数 `enable_thinking: true`          |
-| **Kimi / Moonshot** | `ChatMoonshot`      | `@langchain/community` | `additional_kwargs.reasoning_content` | 使用思考模型 (如 `kimi-k2`)           |
-| **GLM / 智谱**      | `ChatZhipuAI`       | `@langchain/community` | `additional_kwargs.reasoning_content` | 使用思考模型 (如 `glm-z1-thinking`)   |
+基于 EXP-003 的架构决策，所有 OpenAI 兼容厂商通过 `OpenAICompatibleAdapter` 统一适配（内部使用 `ChatDeepSeek` + `baseURL` 切换），推理参数通过 `modelKwargs` 注入请求体。
+
+推理模式是**模型的属性**，不是平台的属性。下表按模型厂商（vendor）维度列出：
+
+| 模型厂商              | 推理模式   | 推理字段路径                            | 启用方式 / modelKwargs                     |
+| :-------------------- | :--------- | :-------------------------------------- | :----------------------------------------- |
+| **DeepSeek**    | always     | `additional_kwargs.reasoning_content` | 选择推理模型 (如 `deepseek-reasoner`)      |
+| **Qwen / 通义** | hybrid     | `additional_kwargs.reasoning_content` | `{ enable_thinking: true }`              |
+| **Kimi / Moonshot** | always | `additional_kwargs.reasoning_content` | 选择思考模型 (如 `kimi-k2-thinking`)       |
+| **GLM / 智谱**  | hybrid     | `additional_kwargs.reasoning_content` | `{ thinking: { type: "enabled" } }`     |
+| **MiniMax**     | always     | `additional_kwargs.reasoning_content` | 无需参数（M2 系列 Interleaved Thinking 始终开启） |
+
+> **聚合平台说明**：SiliconFlow（硅基流动）是模型聚合平台，一个 API Key 可调用多个厂商的模型。
+> 其推理模式取决于所调用的具体模型（如 MiniMax M2.5 = always），而非平台本身。
+> 在 `MODEL_REGISTRY` 中，推理模式按模型（`ModelDefinition.capabilities.reasoningMode`）逐一声明。
+
+推理模式说明：
+- **always**：模型始终输出思维链，无需额外参数（如 MiniMax M2 系列、DeepSeek Reasoner）
+- **hybrid**：同一模型可在"推理"和"直接回答"间切换，需通过 `ModelDefinition.reasoningKwargs` 显式开启
+- **none**：不具备推理能力（未列出）
 
 ---
 
@@ -58,14 +72,21 @@
 ├─────────────────────────────────────────────────────┤
 │                  Business Layer                     │
 │               AiService (编排、调度)                 │
+│  - 推理参数编排: MODEL_REGISTRY → resolveModelKwargs │
 │  - 非流式: model.invoke() → normalize → Response    │
 │  - 流式:   model.stream() → normalize → SSE         │
 ├───────────┬────────────────┬────────────────────────┤
 │  Factory  │  Normalizer    │  Tools / Registry      │
 │  模型工厂  │  推理归一化     │  工具注册表             │
 ├───────────┴────────────────┴────────────────────────┤
+│              Provider Adapter Layer                 │
+│   IProviderAdapter (接口)                           │
+│   ├── OpenAICompatibleAdapter (ChatDeepSeek)        │
+│   ├── AnthropicAdapter (未来)                       │
+│   └── GoogleAdapter (未来)                          │
+├─────────────────────────────────────────────────────┤
 │              LangChain Abstraction                  │
-│ BaseChatModel / Runnable / HumanMessage / AIMessage│
+│ BaseChatModel / Runnable / HumanMessage / AIMessage │
 ├─────────────────────────────────────────────────────┤
 │                Model Providers                      │
 │       DeepSeek  │  Qwen  │  Moonshot  │  GLM        │
@@ -81,14 +102,20 @@ src/ai/
 ├── ai.service.ts                # 核心业务编排层
 ├── index.ts                     # 统一导出
 │
-├── factories/                   # 工厂层
-│   └── model.factory.ts         # AiModelFactory: 按厂商实例化 LangChain Model
+├── providers/                   # 协议适配层（隔离 LangChain 模型类选择）
+│   ├── provider-adapter.interface.ts  # IProviderAdapter 接口
+│   ├── openai-compatible.adapter.ts   # OpenAI 兼容协议适配器（内部使用 ChatDeepSeek）
+│   └── index.ts
+│
+├── factories/                   # 工厂层（依赖 IProviderAdapter，不直接 import LangChain 模型类）
+│   └── model.factory.ts         # AiModelFactory: 委托适配器创建模型
 │
 ├── normalizers/                 # 归一化层
 │   └── reasoning.normalizer.ts  # ReasoningNormalizer: 推理字段提取与归一化
 │
 ├── interfaces/                  # 接口与类型定义
 │   ├── provider.interface.ts    # Message, StreamChunk, ToolCallInfo 等数据类型
+│   ├── model.interface.ts       # ModelDefinition, ModelCapabilities 等模型元数据
 │   ├── tool.interface.ts        # IAiTool, ToolDefinition 等工具类型
 │   └── agent.interface.ts       # 预留给 LangGraph Agent 的类型定义
 │
@@ -99,8 +126,9 @@ src/ai/
 ├── filters/                     # 异常过滤器
 │   └── ai-exception.filter.ts   # AiExceptionFilter: LangChain 异常 → 结构化 HTTP 响应
 │
-├── constants/                   # 常量与枚举
-│   └── ai.constants.ts          # AiProvider, StreamChunkType, MessageRole
+├── constants/                   # 常量、枚举与注册表
+│   ├── ai.constants.ts          # AiProvider, StreamChunkType, ReasoningMode, MessageRole
+│   └── model-registry.ts        # MODEL_REGISTRY: 模型静态注册表（含 reasoningKwargs）
 │
 ├── tools/                       # 工具注册与管理
 │   └── tool.registry.ts         # ToolRegistry: 管理可供 AI 调用的工具
@@ -132,7 +160,9 @@ src/ai/
 | `AiController`        | HTTP 端点，SSE 响应头设置，Observable → SSE 桥接 | `AiService`                               |
 | `AiExceptionFilter`   | 拦截 LangChain 非标准异常，映射为结构化 HTTP 响应 | 无（挂载于 Controller 层）                  |
 | `AiService`           | 业务编排，调度 Factory 和 Normalizer              | `AiModelFactory`, `ReasoningNormalizer` |
-| `AiModelFactory`      | 按提供商 + 配置创建 LangChain Model 实例          | `ConfigService`                           |
+| `AiModelFactory`      | 委托适配器创建模型，不直接依赖 LangChain 模型类   | `ConfigService`, `IProviderAdapter`       |
+| `IProviderAdapter`    | 协议适配器接口，隔离 Factory 与 LangChain 类选择  | —                                           |
+| `OpenAICompatibleAdapter` | OpenAI 兼容协议适配器（内部使用 ChatDeepSeek） | `@langchain/deepseek`                     |
 | `ReasoningNormalizer` | 从 AIMessage(Chunk) 中提取推理字段，输出统一结构  | 无                                          |
 | `ToolRegistry`        | 注册、查找、执行 AI 工具                          | 无                                          |
 | `AgentRegistry`       | 集中管理所有 Agent 实例的发现和访问               | 无                                          |
@@ -141,30 +171,50 @@ src/ai/
 
 ## 3. 核心组件设计 (Core Components)
 
-### 3.1 模型工厂 (AiModelFactory)
+### 3.1 模型工厂 + 协议适配器 (AiModelFactory + IProviderAdapter)
 
 **设计要点**：
 
-- 遵循 **工厂模式**，将模型实例化的复杂逻辑（API Key、Base URL、厂商特有参数）封装在内部
+- **工厂 + 适配器双层结构**：Factory 负责配置解析和编排，Adapter 负责具体的 LangChain 类实例化
+- Factory **不直接 import 任何 LangChain 模型类**，具体类选择由 `IProviderAdapter` 实现封装
 - 返回值统一为 LangChain 的 `BaseChatModel` 类型，调用方无需关心底层具体类
 - 通过 `ConfigService` 从 `.env` 安全读取敏感配置，代码零硬编码
+- **数据驱动**：`PROVIDER_REGISTRY` 中每个提供商映射到一个 Adapter 实例 + 默认配置
+- **职责纯粹**：Factory 不含推理逻辑；Adapter 不含配置读取逻辑
+
+**扩展方式**：
+
+| 场景 | 操作 |
+| :--- | :--- |
+| 新增 OpenAI 兼容提供商 | 在 `PROVIDER_REGISTRY` 加一行配置 |
+| 新增非 OpenAI 协议提供商 | 创建新 Adapter → 在 `PROVIDER_REGISTRY` 引用 |
+| LangChain 修复 ChatOpenAI 推理字段问题 | 只改 `OpenAICompatibleAdapter` 内部一行 |
 
 ```typescript
-// 调用方式（AiService 中）
-const model = this.modelFactory.createChatModel('deepseek', {
-  model: 'deepseek-chat',
-  temperature: 0.7,
-  streaming: true,
-});
+// 协议适配器接口 — Factory 只依赖此接口
+interface IProviderAdapter {
+  createModel(params: AdapterModelParams): BaseChatModel;
+}
 
-// 工厂内部（安装 LangChain 后的真实实现）
-private createDeepSeekModel(apiKey: string, options: any): BaseChatModel {
-  return new ChatDeepSeek({
-    apiKey,
-    model: options.model || 'deepseek-chat',
-    temperature: options.temperature,
-    streaming: options.streaming,
-  });
+// OpenAI 兼容协议适配器 — 封装 ChatDeepSeek 选择（EXP-001/003）
+class OpenAICompatibleAdapter implements IProviderAdapter {
+  createModel(params: AdapterModelParams): BaseChatModel {
+    return new ChatDeepSeek({ apiKey: params.apiKey, model: params.model, ... });
+  }
+}
+
+// 提供商注册表 — 每个提供商映射到适配器 + 默认配置
+const openAICompatible = new OpenAICompatibleAdapter();
+const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
+  siliconflow: { adapter: openAICompatible, defaultModel: '...', fallbackBaseUrl: '...' },
+  deepseek:    { adapter: openAICompatible, defaultModel: 'deepseek-chat' },
+  // 未来: anthropic: { adapter: new AnthropicAdapter(), defaultModel: 'claude-sonnet-4-20250514' },
+};
+
+// 工厂内部：委托适配器创建模型
+createChatModel(provider: string, options: CreateModelOptions = {}): BaseChatModel {
+  const entry = PROVIDER_REGISTRY[provider];
+  return entry.adapter.createModel({ apiKey, model, baseUrl, ...options });
 }
 ```
 
@@ -182,16 +232,17 @@ private createDeepSeekModel(apiKey: string, options: any): BaseChatModel {
 - 返回统一的 `NormalizedChatOutput { content, reasoning }` 结构
 
 ```
-厂商推理字段位置映射：
+厂商推理字段位置映射（按模型厂商维度）：
 
-┌──────────┬────────────────────────────┬────────────────────────────────┐
-│ 厂商     │ additional_kwargs 字段      │ 启用方式                       │
-├──────────┼────────────────────────────┼────────────────────────────────┤
-│ DeepSeek │ reasoning_content          │ 使用推理模型 (deepseek-reasoner)│
-│ Qwen     │ reasoning_content          │ enable_thinking: true          │
-│ Moonshot │ reasoning_content          │ 使用思考模型 (kimi-k2)          │
-│ GLM      │ reasoning_content          │ 使用思考模型 (glm-z1-thinking)  │
-└──────────┴────────────────────────────┴────────────────────────────────┘
+┌──────────────┬────────────────────────────┬──────────────────────────────────────────┐
+│ 模型厂商      │ additional_kwargs 字段      │ 启用方式                                 │
+├──────────────┼────────────────────────────┼──────────────────────────────────────────┤
+│ DeepSeek     │ reasoning_content          │ 推理模型自动开启 (deepseek-reasoner)      │
+│ Qwen         │ reasoning_content          │ modelKwargs: { enable_thinking: true }   │
+│ Moonshot     │ reasoning_content          │ 思考模型自动开启 (kimi-k2-thinking)       │
+│ GLM          │ reasoning_content          │ modelKwargs: { thinking: {type:"enabled"}}│
+│ MiniMax      │ reasoning_content          │ 无需参数（M2 系列思考始终开启）            │
+└──────────────┴────────────────────────────┴──────────────────────────────────────────┘
 ```
 
 **使用场景**：
@@ -349,11 +400,15 @@ Client → POST /ai/chat/stream { provider: 'qwen', messages: [msg1, msg2, ...] 
 
 ### 场景 C: 推理对话
 
-与普通对话流程完全一致，区别在于：
+推理对话通过 **Service 层编排** 驱动，从 DTO → Service(注册表查询) → Factory(modelKwargs) → API：
 
-1. **模型选择**：使用推理模型（如 `deepseek-reasoner`、`glm-z1-thinking`）
-2. **推理提取**：`ReasoningNormalizer` 从 `additional_kwargs.reasoning_content` 提取出推理内容
-3. **流式分类**：推理块以 `StreamChunkType.REASONING` 类型发送，文本块以 `TEXT` 类型发送
+1. **推理意图传递**：`reasoningChat()` 强制 `enableReasoning: true`；`chat()` 尊重 DTO 中用户的选择
+2. **Service 层解析**：`resolveModelKwargs()` 查 `MODEL_REGISTRY` 获取模型定义，仅当 `reasoningMode=HYBRID` 时将 `ModelDefinition.reasoningKwargs` 传给工厂；ALWAYS/NONE 模型无需额外参数
+3. **Factory → Adapter 透传**：工厂委托适配器创建模型，`modelKwargs` 原样传入
+4. **推理提取**：`ReasoningNormalizer` 从 `additional_kwargs.reasoning_content` 提取推理内容
+5. **流式分类**：推理块以 `StreamChunkType.REASONING` 类型发送，文本块以 `TEXT` 类型发送
+
+**扩展性**：新增 hybrid 模型时，只需在 `MODEL_REGISTRY` 中声明 `reasoningKwargs`，无需修改 Service 或 Factory 代码（OCP）
 
 ---
 
@@ -373,7 +428,7 @@ Client → POST /ai/chat/stream { provider: 'qwen', messages: [msg1, msg2, ...] 
 ### ❌ 避免做法
 
 1. **不要用 `@langchain/openai` 包装国内模型**：该包会丢弃 `reasoning_content` 字段
-2. **不要自行实现 Provider 抽象层**：LangChain 的 `BaseChatModel` 已经是工业级的 Provider 抽象
+2. **不要在 Factory 中直接 import LangChain 模型类**：通过 `IProviderAdapter` 适配器隔离，具体类选择封装在 Adapter 实现中
 3. **不要自行实现 Agent/Orchestrator 接口**：智能体编排由 LangGraph 的 StateGraph 负责
 4. **不要硬编码推理字段路径**：厂商可能在后续版本变更字段位置，统一由归一化层维护
 5. **不要在 Service 层手动 try-catch 非流式调用的 LangChain 错误**：这会导致异常处理逻辑分散，应由 `AiExceptionFilter` 在 Controller 层统一拦截
@@ -385,10 +440,10 @@ Client → POST /ai/chat/stream { provider: 'qwen', messages: [msg1, msg2, ...] 
 
 ### Step 1: 安装 LangChain 依赖
 
-**这一步在干什么**: 安装 LangChain 核心包和各厂商的模型适配包。`@langchain/core` 提供基础抽象，`@langchain/deepseek` 和 `@langchain/community` 提供具体厂商实现。
+**这一步在干什么**: 安装 LangChain 核心包和模型适配包。`@langchain/core` 提供基础抽象，`@langchain/deepseek` 提供 OpenAI 兼容模型的适配（通过 `OpenAICompatibleAdapter` 封装）。不使用 `@langchain/community`（EXP-002：实现质量问题 + 依赖冲突）。
 
 ```bash
-npm install @langchain/core @langchain/deepseek @langchain/community
+npm install @langchain/core @langchain/deepseek
 ```
 
 ### Step 2: 配置环境变量
@@ -404,91 +459,82 @@ MOONSHOT_API_KEY=sk-xxx
 GLM_API_KEY=xxx.xxx
 ```
 
-### Step 3: 启用模型工厂真实实现
+### Step 3: 启用模型工厂 + 协议适配器
 
-**这一步在干什么**: 将 `model.factory.ts` 中的 mock 占位替换为真实的 LangChain 实例化代码。每个工厂方法对应一个厂商的 LangChain 类。
+**这一步在干什么**: 工厂通过 `IProviderAdapter` 接口委托适配器创建模型。`OpenAICompatibleAdapter` 内部使用 `ChatDeepSeek`（EXP-003），但这一选择被封装为实现细节，工厂文件中不出现任何 LangChain 模型类的 import。
 
 ```typescript
-// src/ai/factories/model.factory.ts
+// src/ai/providers/openai-compatible.adapter.ts — 封装 ChatDeepSeek 选择
 import { ChatDeepSeek } from '@langchain/deepseek';
-import {
-  ChatAlibabaTongyi,
-  ChatMoonshot,
-  ChatZhipuAI,
-} from '@langchain/community/chat_models';
 
-private createDeepSeekModel(apiKey: string, options: any): BaseChatModel {
-  return new ChatDeepSeek({
-    apiKey,
-    model: options.model || 'deepseek-chat',
-    temperature: options.temperature,
-    streaming: options.streaming,
-  });
+export class OpenAICompatibleAdapter implements IProviderAdapter {
+  createModel(params: AdapterModelParams): BaseChatModel {
+    return new ChatDeepSeek({
+      apiKey: params.apiKey, model: params.model,
+      ...(params.modelKwargs ? { modelKwargs: params.modelKwargs } : {}),
+      ...(params.baseUrl ? { configuration: { baseURL: params.baseUrl } } : {}),
+    });
+  }
 }
 
-private createQwenModel(apiKey: string, options: any): BaseChatModel {
-  return new ChatAlibabaTongyi({
-    alibabaApiKey: apiKey,
-    model: options.model || 'qwen-turbo',
-    temperature: options.temperature,
-    streaming: options.streaming,
-  });
-}
+// src/ai/factories/model.factory.ts — 委托适配器，不依赖具体 LangChain 类
+const openAICompatible = new OpenAICompatibleAdapter();
+const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
+  siliconflow: { adapter: openAICompatible, defaultModel: '...', fallbackBaseUrl: '...' },
+  deepseek:    { adapter: openAICompatible, defaultModel: 'deepseek-chat' },
+  qwen:        { adapter: openAICompatible, defaultModel: 'qwen-plus', fallbackBaseUrl: '...' },
+  // 未来: anthropic: { adapter: new AnthropicAdapter(), defaultModel: 'claude-sonnet-4-20250514' },
+};
 
-private createMoonshotModel(apiKey: string, options: any): BaseChatModel {
-  return new ChatMoonshot({
-    apiKey,
-    model: options.model || 'moonshot-v1-8k',
-    temperature: options.temperature,
-    streaming: options.streaming,
-  });
-}
-
-private createZhipuModel(apiKey: string, options: any): BaseChatModel {
-  return new ChatZhipuAI({
-    zhipuAIApiKey: apiKey,
-    model: options.model || 'glm-4',
-    temperature: options.temperature,
-    streaming: options.streaming,
+createChatModel(provider: string, options: CreateModelOptions = {}): BaseChatModel {
+  const entry = PROVIDER_REGISTRY[provider];
+  return entry.adapter.createModel({
+    apiKey: this.getApiKey(provider),
+    model: options.model || entry.defaultModel,
+    baseUrl: this.getBaseUrl(provider) || entry.fallbackBaseUrl,
+    ...options,
   });
 }
 ```
 
 ### Step 4: 启用 AiService 真实调用
 
-**这一步在干什么**: 将 `ai.service.ts` 中的 mock 流替换为真实的 LangChain `invoke` / `stream` 调用。归一化层已就绪，只需取消注释并删除 mock 代码。
+**这一步在干什么**: Service 层负责推理参数编排——查注册表、解析 `reasoningKwargs`、传给工厂。工厂不含推理逻辑。
 
 ```typescript
-// src/ai/ai.service.ts — 非流式
+// src/ai/ai.service.ts — 推理参数编排（核心新增方法）
+private resolveModelKwargs(
+  provider: AiProvider, modelId: string, enableReasoning?: boolean,
+): Record<string, unknown> | undefined {
+  if (!enableReasoning) return undefined;
+  const modelDef = this.findModelDefinition(provider, modelId);
+  if (modelDef?.capabilities.reasoningMode === ReasoningMode.HYBRID && modelDef.reasoningKwargs) {
+    return modelDef.reasoningKwargs;
+  }
+  return undefined;
+}
+
+// chat 尊重 DTO 中的 enableReasoning
 async chat(dto: ChatRequestDto): Promise<ChatResponseDto> {
+  const modelKwargs = this.resolveModelKwargs(dto.provider, dto.model, dto.enableReasoning);
   const model = this.modelFactory.createChatModel(dto.provider, {
     model: dto.model,
     temperature: dto.temperature,
+    modelKwargs, // 如 hybrid 模型的 { enable_thinking: true }
   });
-
-  const result = await model.invoke(dto.messages);
+  const result = await model.invoke(messages);
   const normalized = this.reasoningNormalizer.normalize(dto.provider, result);
-
-  return {
-    content: normalized.content,
-    reasoning: normalized.reasoning ?? undefined,
-  };
+  return { content: normalized.content, reasoning: normalized.reasoning ?? undefined };
 }
 
-// src/ai/ai.service.ts — 流式核心逻辑
-private async executeStream(model, provider, messages, subject, includeReasoning) {
-  const stream = await model.stream(messages);
-  for await (const chunk of stream) {
-    const normalized = this.reasoningNormalizer.normalize(provider, chunk);
-    if (normalized.reasoning && includeReasoning) {
-      subject.next({ type: StreamChunkType.REASONING, content: normalized.reasoning });
-    }
-    if (normalized.content) {
-      subject.next({ type: StreamChunkType.TEXT, content: normalized.content });
-    }
-  }
-  subject.next({ type: StreamChunkType.DONE });
-  subject.complete();
+// reasoningChat 强制开启推理
+async reasoningChat(dto: ChatRequestDto): Promise<ReasoningResponseDto> {
+  const modelKwargs = this.resolveModelKwargs(dto.provider, dto.model, true);
+  const model = this.modelFactory.createChatModel(dto.provider, {
+    model: dto.model,
+    modelKwargs,
+  });
+  // ...
 }
 ```
 

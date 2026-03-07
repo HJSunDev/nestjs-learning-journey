@@ -1,18 +1,99 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChatDeepSeek } from '@langchain/deepseek';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { IProviderAdapter } from '../providers/provider-adapter.interface';
+import { OpenAICompatibleAdapter } from '../providers/openai-compatible.adapter';
+
+/**
+ * 提供商注册条目
+ *
+ * 将提供商标识映射到：
+ * - adapter:        协议适配器（决定用哪个 LangChain 类创建模型）
+ * - defaultModel:   该提供商的默认模型名称
+ * - fallbackBaseUrl: baseURL 的回退值（env 未配置时使用）
+ */
+interface ProviderEntry {
+  adapter: IProviderAdapter;
+  defaultModel: string;
+  fallbackBaseUrl?: string;
+}
+
+/**
+ * 共享的 OpenAI 兼容协议适配器实例
+ *
+ * 所有遵循 OpenAI Chat Completions 规范的提供商共享同一个无状态适配器。
+ * 未来接入 Anthropic/Google 等非 OpenAI 协议时，在此处新增对应适配器实例。
+ */
+const openAICompatible = new OpenAICompatibleAdapter();
+
+/**
+ * 提供商注册表
+ *
+ * 新增 OpenAI 兼容提供商：加一行配置即可，无需改动任何代码。
+ * 新增非 OpenAI 协议提供商：创建新 Adapter，然后加一行配置。
+ *
+ * baseURL 配置优先级：env 环境变量 > fallbackBaseUrl > 无（使用 SDK 默认值）
+ */
+const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
+  siliconflow: {
+    adapter: openAICompatible,
+    defaultModel: 'Pro/MiniMaxAI/MiniMax-M2.5',
+    fallbackBaseUrl: 'https://api.siliconflow.cn/v1',
+  },
+  moonshot: {
+    adapter: openAICompatible,
+    defaultModel: 'kimi-k2.5',
+    fallbackBaseUrl: 'https://api.moonshot.cn/v1',
+  },
+  deepseek: {
+    adapter: openAICompatible,
+    defaultModel: 'deepseek-chat',
+  },
+  qwen: {
+    adapter: openAICompatible,
+    defaultModel: 'qwen-plus',
+    fallbackBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  },
+  glm: {
+    adapter: openAICompatible,
+    defaultModel: 'glm-4',
+    fallbackBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+  },
+};
+
+/**
+ * 模型创建选项
+ *
+ * 工厂层只接收纯技术参数，不包含业务语义（如 enableReasoning）。
+ * 推理相关的 modelKwargs 由 Service 层根据 ModelDefinition 解析后传入。
+ */
+export interface CreateModelOptions {
+  model?: string;
+  temperature?: number;
+  streaming?: boolean;
+  maxTokens?: number;
+  /**
+   * 透传到 LangChain 模型的额外参数
+   *
+   * 由 Service 层负责根据 ModelDefinition.reasoningKwargs 构造。
+   */
+  modelKwargs?: Record<string, unknown>;
+}
 
 /**
  * AI 模型工厂
  *
- * 基于 EXP-003 的架构决策，所有 OpenAI 兼容的厂商统一使用 ChatDeepSeek，
- * 通过 configuration.baseURL 切换目标厂商或聚合平台（如硅基流动），
- * 避免 @langchain/community 的实现质量问题（EXP-002）和
- * @langchain/openai 的字段丢失问题（EXP-001）。
+ * 职责：根据 provider 标识，委托对应的协议适配器创建 LangChain ChatModel 实例。
  *
- * 返回的实例统一遵循 LangChain 的 BaseChatModel 抽象，
- * 调用方无需关心底层连接的是哪家厂商。
+ * 设计要点：
+ * - 工厂不直接 import 任何 LangChain 模型类（ChatDeepSeek、ChatAnthropic 等），
+ *   具体的 LangChain 类选择由 IProviderAdapter 实现封装
+ * - 工厂通过 PROVIDER_REGISTRY 查找适配器和默认配置，符合 OCP
+ * - 推理参数由 Service 层解析后通过 modelKwargs 传入，工厂不含业务逻辑
+ *
+ * 扩展方式：
+ * - 新增 OpenAI 兼容提供商：在 PROVIDER_REGISTRY 中添加一行
+ * - 新增非 OpenAI 协议提供商：创建新 Adapter 实现 → 在 PROVIDER_REGISTRY 中引用
  */
 @Injectable()
 export class AiModelFactory {
@@ -24,30 +105,37 @@ export class AiModelFactory {
    * 根据提供商标识创建 LangChain Chat Model 实例
    *
    * @param provider 提供商 ID (如 'siliconflow', 'deepseek', 'qwen', 'moonshot', 'glm')
-   * @param options  模型的额外选项 (如 temperature, model, streaming)
+   * @param options  模型创建选项（model, temperature, streaming, maxTokens, modelKwargs）
    * @returns LangChain BaseChatModel 实例
    * @throws Error 当提供商不支持或 API Key 未配置时
    */
   createChatModel(
     provider: string,
-    options: Record<string, any> = {},
+    options: CreateModelOptions = {},
   ): BaseChatModel {
-    const apiKey = this.getApiKey(provider);
-
-    switch (provider) {
-      case 'siliconflow':
-        return this.createSiliconFlowModel(apiKey, options);
-      case 'moonshot':
-        return this.createMoonshotModel(apiKey, options);
-      case 'deepseek':
-        return this.createDeepSeekModel(apiKey, options);
-      case 'qwen':
-        return this.createQwenModel(apiKey, options);
-      case 'glm':
-        return this.createZhipuModel(apiKey, options);
-      default:
-        throw new Error(`不支持的 AI 提供商: ${provider}`);
+    const entry = PROVIDER_REGISTRY[provider];
+    if (!entry) {
+      throw new Error(`不支持的 AI 提供商: ${provider}`);
     }
+
+    const apiKey = this.getApiKey(provider);
+    const model = options.model || entry.defaultModel;
+    const baseUrl = this.getBaseUrl(provider) || entry.fallbackBaseUrl;
+
+    this.logger.debug(
+      `创建模型 [provider=${provider}, model=${model}` +
+        `${options.modelKwargs ? `, kwargs=${JSON.stringify(options.modelKwargs)}` : ''}]`,
+    );
+
+    return entry.adapter.createModel({
+      apiKey,
+      model,
+      baseUrl,
+      temperature: options.temperature,
+      streaming: options.streaming,
+      maxTokens: options.maxTokens,
+      modelKwargs: options.modelKwargs,
+    });
   }
 
   /**
@@ -73,133 +161,5 @@ export class AiModelFactory {
    */
   private getBaseUrl(provider: string): string | undefined {
     return this.configService.get<string>(`ai.providers.${provider}.baseUrl`);
-  }
-
-  // ============================================================
-  // 工厂方法
-  // 基于 EXP-003：统一使用 ChatDeepSeek + baseURL 切换厂商
-  // ============================================================
-
-  /**
-   * 创建 SiliconFlow（硅基流动）模型
-   *
-   * 硅基流动是模型聚合平台，一个 API Key 可调用多厂商模型。
-   * 模型名称需带厂商前缀，如 MiniMaxAI/MiniMax-M2.5。
-   */
-  private createSiliconFlowModel(
-    apiKey: string,
-    options: Record<string, unknown>,
-  ): BaseChatModel {
-    const model = (options.model as string) || 'Pro/MiniMaxAI/MiniMax-M2.5';
-    this.logger.debug(`创建 SiliconFlow 模型 [model=${model}]`);
-
-    return new ChatDeepSeek({
-      apiKey,
-      model,
-      temperature: options.temperature as number | undefined,
-      streaming: options.streaming as boolean | undefined,
-      maxTokens: options.maxTokens as number | undefined,
-      configuration: {
-        baseURL:
-          this.getBaseUrl('siliconflow') || 'https://api.siliconflow.cn/v1',
-      },
-    });
-  }
-
-  /**
-   * 创建 Moonshot (Kimi) 模型
-   *
-   * 通过 ChatDeepSeek + baseURL 适配（EXP-003），
-   * Moonshot API 完全兼容 OpenAI Chat Completions 格式。
-   */
-  private createMoonshotModel(
-    apiKey: string,
-    options: Record<string, unknown>,
-  ): BaseChatModel {
-    const model = (options.model as string) || 'kimi-k2.5';
-    this.logger.debug(`创建 Moonshot 模型 [model=${model}]`);
-
-    return new ChatDeepSeek({
-      apiKey,
-      model,
-      temperature: options.temperature as number | undefined,
-      streaming: options.streaming as boolean | undefined,
-      maxTokens: options.maxTokens as number | undefined,
-      configuration: {
-        baseURL: this.getBaseUrl('moonshot') || 'https://api.moonshot.cn/v1',
-      },
-    });
-  }
-
-  /**
-   * 创建 DeepSeek 模型（原生适配，无需 baseURL 覆盖）
-   */
-  private createDeepSeekModel(
-    apiKey: string,
-    options: Record<string, unknown>,
-  ): BaseChatModel {
-    const model = (options.model as string) || 'deepseek-chat';
-    this.logger.debug(`创建 DeepSeek 模型 [model=${model}]`);
-
-    return new ChatDeepSeek({
-      apiKey,
-      model,
-      temperature: options.temperature as number | undefined,
-      streaming: options.streaming as boolean | undefined,
-      maxTokens: options.maxTokens as number | undefined,
-    });
-  }
-
-  /**
-   * 创建 Qwen (通义千问) 模型
-   *
-   * 通过 ChatDeepSeek + baseURL 适配（EXP-003），
-   * Qwen 的推理功能需通过 modelKwargs 传入 enable_thinking 参数。
-   */
-  private createQwenModel(
-    apiKey: string,
-    options: Record<string, unknown>,
-  ): BaseChatModel {
-    const model = (options.model as string) || 'qwen-plus';
-    this.logger.debug(`创建 Qwen 模型 [model=${model}]`);
-
-    return new ChatDeepSeek({
-      apiKey,
-      model,
-      temperature: options.temperature as number | undefined,
-      streaming: options.streaming as boolean | undefined,
-      maxTokens: options.maxTokens as number | undefined,
-      configuration: {
-        baseURL:
-          this.getBaseUrl('qwen') ||
-          'https://dashscope.aliyuncs.com/compatible-mode/v1',
-      },
-    });
-  }
-
-  /**
-   * 创建智谱 GLM 模型
-   *
-   * 通过 ChatDeepSeek + baseURL 适配（EXP-003），
-   * GLM 的推理功能需通过 modelKwargs 传入 thinking 配置。
-   */
-  private createZhipuModel(
-    apiKey: string,
-    options: Record<string, unknown>,
-  ): BaseChatModel {
-    const model = (options.model as string) || 'glm-4';
-    this.logger.debug(`创建 Zhipu (GLM) 模型 [model=${model}]`);
-
-    return new ChatDeepSeek({
-      apiKey,
-      model,
-      temperature: options.temperature as number | undefined,
-      streaming: options.streaming as boolean | undefined,
-      maxTokens: options.maxTokens as number | undefined,
-      configuration: {
-        baseURL:
-          this.getBaseUrl('glm') || 'https://open.bigmodel.cn/api/paas/v4',
-      },
-    });
   }
 }

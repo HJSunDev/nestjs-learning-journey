@@ -127,6 +127,7 @@ export class AiController {
   /**
    * 推理对话（含思考过程）
    */
+  @Public()
   @Post('chat/reasoning')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

@@ -1,15 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Exclude, Type } from 'class-transformer';
-import { AiProvider } from '../constants';
+import { AiProvider, ReasoningMode } from '../constants';
 
 /**
  * 模型能力 DTO
  */
 @Exclude()
 export class ModelCapabilitiesDto {
-  @ApiProperty({ description: '支持思维链推理' })
+  @ApiProperty({
+    description:
+      '推理模式：none=不支持, always=始终推理, hybrid=可选推理（需传 enableReasoning）',
+    enum: ReasoningMode,
+    example: ReasoningMode.HYBRID,
+  })
   @Expose()
-  reasoning: boolean;
+  reasoningMode: ReasoningMode;
 
   @ApiProperty({ description: '支持流式响应' })
   @Expose()

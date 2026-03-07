@@ -45,6 +45,20 @@ export enum StreamChunkType {
 }
 
 /**
+ * 模型推理模式枚举
+ *
+ * 区分模型的推理能力类型，工厂层据此决定是否以及如何构造推理参数：
+ * - NONE:    不具备推理能力
+ * - ALWAYS:  始终推理（如 deepseek-reasoner），选对模型即开启，无需额外参数
+ * - HYBRID:  可选推理（如 qwen-plus），需通过 API 参数显式开启
+ */
+export enum ReasoningMode {
+  NONE = 'none',
+  ALWAYS = 'always',
+  HYBRID = 'hybrid',
+}
+
+/**
  * 消息角色枚举
  */
 export enum MessageRole {

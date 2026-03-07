@@ -35,8 +35,8 @@
 - **[011. 数据持久化 (TypeORM + MongoDB)](notes/011-database-persistence.md)**
   - 官方模块(@nestjs/typeorm)使用
   - MongoDB 实体定义、ObjectId 处理及 CRUD 实践
-- **[012. Docker 环境集成与数据持久化](notes/012-docker-environment.md)**
-  - Docker Compose 编排 MongoDB 服务，Volume 数据挂载与 Git 忽略策略详解
+- **[012. Docker 开发环境与项目启动指南](notes/012-docker-environment.md)**
+  - Docker Compose Profile 三模式启动（开发/仅数据库/生产）、服务架构总览及环境恢复速查
 - **[013. Winston 分级日志与日志轮转](notes/013-advanced-logging.md)**
   - Winston 集成、DailyRotateFile 策略、Buffer Logs 原理及生产环境分级配置
 - **[014. 三层架构与目录规范](notes/014-three-tier-architecture.md)**

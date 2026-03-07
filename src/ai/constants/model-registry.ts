@@ -1,4 +1,4 @@
-import { AiProvider } from './ai.constants';
+import { AiProvider, ReasoningMode } from './ai.constants';
 import { ModelDefinition } from '../interfaces';
 
 /**
@@ -23,7 +23,8 @@ export const MODEL_REGISTRY: readonly ModelDefinition[] = [
     vendor: 'MiniMax',
     contextWindow: 192_000,
     capabilities: {
-      reasoning: false,
+      // MiniMax M2 系列采用 Interleaved Thinking 架构，思考始终开启、无法关闭
+      reasoningMode: ReasoningMode.ALWAYS,
       streaming: true,
       toolCalls: true,
     },
@@ -40,7 +41,8 @@ export const MODEL_REGISTRY: readonly ModelDefinition[] = [
     vendor: 'MiniMax',
     contextWindow: 192_000,
     capabilities: {
-      reasoning: true,
+      // MiniMax M2 系列采用 Interleaved Thinking 架构，思考始终开启、无法关闭
+      reasoningMode: ReasoningMode.ALWAYS,
       streaming: true,
       toolCalls: true,
     },
