@@ -97,6 +97,34 @@
   - Data Stream Protocol 协议适配、Controller 层双端点架构及 `useChat` 对接方案
 
 
+## 🤖 阶段三：LangChain 核心架构与工程化
+
+> 在 038-040 建立的多模型工厂 + 流式 SSE 基座之上，补齐 LangChain 的核心抽象能力，为后续智能体开发铺路。
+
+<!-- NEW_AI_CORE_START -->
+- 🔲 **[041. LCEL 管道与提示词工程 (Prompt Template & LCEL)](notes/041-lcel-and-prompt-template.md)**
+  - 废弃手动 Message 数组拼接，引入 ChatPromptTemplate 与 `.pipe()` 组合语法，构建 prompt | model 基础管道
+- 🔲 **[042. 结构化输出与 Parser (Structured Output)](notes/042-structured-output.md)**
+  - 结合 Zod / class-validator 实现 `withStructuredOutput`，让 AI 返回强类型 JSON 对象
+- 🔲 **[043. 函数调用底层机制 (Tool Calling)](notes/043-tool-calling.md)**
+  - 打通 ToolRegistry，实现具体工具，通过 `.bindTools()` 挂载并实现工具分发循环
+- 🔲 **[044. 生产级多轮会话管理 (Memory & Redis)](notes/044-memory-and-redis.md)**
+  - 基于 Redis 实现 `RedisChatMessageHistory`、对话窗口裁剪，打造有状态会话 API
+- 🔲 **[045. RAG 检索增强生成 (Retriever & Vector Store)](notes/045-rag-and-vector-store.md)**
+  - 跑通 DocumentLoader → TextSplitter → Embeddings → Retriever 全链路，消除模型的知识盲区
+- 🔲 **[046. 生产级可观测性与韧性 (Observability & Resilience)](notes/046-observability-and-resilience.md)**
+  - LangChain Callbacks 日志打点、`.withRetry()` 降级策略、核心链路单元测试
+<!-- NEW_AI_CORE_END -->
+
+## 🛸 阶段四：LangGraph 有状态智能体
+
+> 在 LCEL + Tool Calling 基础之上，进入 LangGraph 状态机驱动的智能体开发。
+
+- 🔲 **047. LangGraph 基础：状态图与节点流转** (StateGraph, Nodes, Edges)
+- 🔲 **048. 生产级 ReAct Agent 构建** (超越早期黑盒 AgentExecutor)
+- 🔲 **049. 智能体持久化与人机协同** (Checkpointer & Human-in-the-loop)
+- 🔲 **050. 多智能体协作网络** (Supervisor & Handoff 架构)
+
 ## 📝 维护指南
 
 - 所有的详细笔记存放在 `docs/notes/` 目录下。
