@@ -102,8 +102,8 @@
 > 在 038-040 建立的多模型工厂 + 流式 SSE 基座之上，补齐 LangChain 的核心抽象能力，为后续智能体开发铺路。
 
 <!-- NEW_AI_CORE_START -->
-- 🔲 **[041. LCEL 管道与提示词工程 (Prompt Template & LCEL)](notes/041-lcel-and-prompt-template.md)**
-  - 废弃手动 Message 数组拼接，引入 ChatPromptTemplate 与 `.pipe()` 组合语法，构建 prompt | model 基础管道
+- ✅ **[041. LCEL 管道与提示词工程 (Prompt Template & LCEL)](notes/041-lcel-and-prompt-template.md)**
+  - 基于完全隔离设计，引入 ChatPromptTemplate 与 `.pipe()` 组合语法，构建 prompt | model 基础管道
 - 🔲 **[042. 结构化输出与 Parser (Structured Output)](notes/042-structured-output.md)**
   - 结合 Zod / class-validator 实现 `withStructuredOutput`，让 AI 返回强类型 JSON 对象
 - 🔲 **[043. 函数调用底层机制 (Tool Calling)](notes/043-tool-calling.md)**
