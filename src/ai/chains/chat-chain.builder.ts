@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { Runnable } from '@langchain/core/runnables';
+import type { ZodObject, ZodRawShape } from 'zod';
 import { convertToLangChainMessages } from '../utils';
 import {
   createChatPrompt,
@@ -40,7 +41,7 @@ export interface PreparedChain {
  * - 同一条链既可 invoke() 也可 stream()，消除非流式/流式的代码分化
  *
  * 扩展方向：
- * - 042: 在管道末端追加 OutputParser → prompt.pipe(model).pipe(parser)
+ * - 042: 通过 withStructuredOutput 包装模型 → prompt.pipe(structuredModel)
  * - 043: 通过 .bindTools() 挂载工具 → prompt.pipe(modelWithTools)
  * - 046: 通过 .withRetry() 追加重试 → chain.withRetry({ stopAfterAttempt: 3 })
  */
@@ -94,6 +95,71 @@ export class ChatChainBuilder {
 
     return {
       chain: prompt.pipe(model),
+      input: { input: userInput },
+    };
+  }
+
+  /**
+   * 构建多轮对话 + 结构化输出 LCEL 管道
+   *
+   * 管道结构：ChatPromptTemplate → model.withStructuredOutput(schema)
+   *
+   * withStructuredOutput 返回一个新的 Runnable，其输出不再是 AIMessage，
+   * 而是经 Zod Schema 校验后的强类型 JSON 对象。内部使用 tool calling
+   * 或 JSON mode（取决于模型能力）来约束输出格式。
+   *
+   * 设置 includeRaw: true 使返回值变为 { raw: AIMessage, parsed: T }，
+   * 从而可同时获取结构化数据和 token usage 等运行时元数据。
+   *
+   * @param model         由 AiModelFactory 创建的 LangChain 模型实例
+   * @param schema        Zod Schema，定义期望的输出结构
+   * @param messages      项目内部消息列表
+   * @param systemPrompt  可选的系统提示词
+   * @returns PreparedChain，chain.invoke(input) 返回 { raw, parsed }
+   */
+  buildStructuredChatChain(
+    model: BaseChatModel,
+    schema: ZodObject<ZodRawShape>,
+    messages: Message[],
+    systemPrompt?: string,
+  ): PreparedChain {
+    const prompt = createChatPrompt(systemPrompt, hasSystemMessage(messages));
+    const structuredModel = model.withStructuredOutput(schema, {
+      includeRaw: true,
+    });
+
+    return {
+      chain: prompt.pipe(structuredModel),
+      input: { messages: convertToLangChainMessages(messages) },
+    };
+  }
+
+  /**
+   * 构建单轮快速提取 + 结构化输出 LCEL 管道
+   *
+   * 管道结构：ChatPromptTemplate([SystemMessage?], '{input}') → model.withStructuredOutput(schema)
+   *
+   * 适用于从一段文本中提取结构化信息的单轮场景（如情感分析、实体提取）。
+   *
+   * @param model         由 AiModelFactory 创建的 LangChain 模型实例
+   * @param schema        Zod Schema，定义期望的输出结构
+   * @param userInput     用户输入文本
+   * @param systemPrompt  可选的系统提示词
+   * @returns PreparedChain，chain.invoke(input) 返回 { raw, parsed }
+   */
+  buildStructuredQuickChatChain(
+    model: BaseChatModel,
+    schema: ZodObject<ZodRawShape>,
+    userInput: string,
+    systemPrompt?: string,
+  ): PreparedChain {
+    const prompt = createQuickChatPrompt(systemPrompt);
+    const structuredModel = model.withStructuredOutput(schema, {
+      includeRaw: true,
+    });
+
+    return {
+      chain: prompt.pipe(structuredModel),
       input: { input: userInput },
     };
   }

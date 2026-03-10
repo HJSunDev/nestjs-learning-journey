@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   Res,
@@ -23,16 +24,21 @@ import {
   QuickChatRequestDto,
   ChatResponseDto,
   ReasoningResponseDto,
+  StructuredChatRequestDto,
+  StructuredExtractRequestDto,
+  StructuredResponseDto,
 } from './dto';
 import { AiExceptionFilter } from './filters/ai-exception.filter';
 import { Public } from 'src/common/decorators/public.decorator';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 
 /**
- * LCEL 管道控制器 (041 章节专享)
+ * LCEL 管道控制器
  *
  * 暴露基于声明式管道架构的独立端点，用于与 038 章节的过程式端点 (/ai/*) 对比。
  * 路由前缀设为 'ai/lcel'。
+ *
+ * 042 章节扩展：新增 /structured/* 端点，支持通过 withStructuredOutput 获取强类型 JSON 输出。
  */
 @ApiTags('AI 服务 (LCEL 管道版)')
 @ApiBearerAuth()
@@ -137,5 +143,65 @@ export class LcelController {
       provider: dto.provider,
       model: dto.model,
     });
+  }
+
+  // ============================================================
+  // 042 结构化输出端点
+  // ============================================================
+
+  @Public()
+  @Get('structured/schemas')
+  @ApiOperation({
+    summary: '获取可用的结构化输出 Schema 列表',
+    description:
+      '返回所有预定义的 Zod Schema 名称、描述和字段信息，' +
+      '客户端据此选择 schemaName 发起结构化输出请求。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '可用 Schema 列表',
+  })
+  getAvailableSchemas() {
+    return this.lcelService.getAvailableSchemas();
+  }
+
+  @Public()
+  @Post('structured/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '多轮对话 + 结构化输出',
+    description:
+      '通过 model.withStructuredOutput(schema) 将模型输出约束为指定 Schema 的 JSON 对象。' +
+      '内部使用 tool calling 机制实现，返回经 Zod 校验的强类型数据。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '结构化输出成功',
+    type: StructuredResponseDto,
+  })
+  async structuredChat(
+    @Body() dto: StructuredChatRequestDto,
+  ): Promise<StructuredResponseDto> {
+    return this.lcelService.structuredChat(dto);
+  }
+
+  @Public()
+  @Post('structured/extract')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '单轮快速提取 + 结构化输出',
+    description:
+      '从文本中直接提取结构化信息（如情感分析、实体提取）。' +
+      '无需构建消息列表，直接传入文本和 Schema 名称即可。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '结构化提取成功',
+    type: StructuredResponseDto,
+  })
+  async structuredExtract(
+    @Body() dto: StructuredExtractRequestDto,
+  ): Promise<StructuredResponseDto> {
+    return this.lcelService.structuredExtract(dto);
   }
 }

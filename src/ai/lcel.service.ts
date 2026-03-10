@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import type { AIMessageChunk } from '@langchain/core/messages';
 import type { Runnable } from '@langchain/core/runnables';
 import { AiModelFactory } from './factories/model.factory';
 import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { ChatChainBuilder } from './chains';
+import { SchemaRegistry, type SchemaListItem } from './schemas';
 import { AiProvider, ReasoningMode, StreamChunkType } from './constants';
 import { MODEL_REGISTRY } from './constants/model-registry';
 import {
@@ -11,18 +12,25 @@ import {
   QuickChatRequestDto,
   ChatResponseDto,
   ReasoningResponseDto,
+  StructuredChatRequestDto,
+  StructuredExtractRequestDto,
+  StructuredResponseDto,
 } from './dto';
 import { Observable, Subject } from 'rxjs';
 import { StreamChunk } from './interfaces';
 
 /**
- * LCEL 管道服务层 (041 章节专享)
+ * LCEL 管道服务层
  *
  * 与 038 章节的 AiService 完全隔离，专门用于演示声明式 LCEL 管道架构。
  * 核心差异：
  * - 不再直接调用 model.invoke(messages)
  * - 委托 ChatChainBuilder 组装 prompt.pipe(model) 管道
  * - 将 executeStream 的输入从 BaseChatModel 提升为 Runnable 接口
+ *
+ * 042 章节扩展：
+ * - 新增 structuredChat / structuredExtract 方法
+ * - 通过 withStructuredOutput 让模型返回强类型 JSON 对象
  */
 @Injectable()
 export class LcelService {
@@ -32,6 +40,7 @@ export class LcelService {
     private readonly modelFactory: AiModelFactory,
     private readonly reasoningNormalizer: ReasoningNormalizer,
     private readonly chainBuilder: ChatChainBuilder,
+    private readonly schemaRegistry: SchemaRegistry,
   ) {}
 
   /**
@@ -218,6 +227,168 @@ export class LcelService {
     void this.executeStream(chain, dto.provider, input, subject);
 
     return subject.asObservable();
+  }
+
+  // ============================================================
+  // 042 结构化输出方法
+  // ============================================================
+
+  /**
+   * 获取所有可用的结构化输出 Schema 列表
+   *
+   * @returns Schema 名称、描述和字段信息
+   */
+  getAvailableSchemas(): SchemaListItem[] {
+    return this.schemaRegistry.listSchemas();
+  }
+
+  /**
+   * 多轮对话 + 结构化输出
+   *
+   * 管道结构：prompt → model.withStructuredOutput(schema)
+   *
+   * withStructuredOutput 设置 includeRaw: true，
+   * 返回 { raw: AIMessage, parsed: T }，同时获取结构化数据和 token usage。
+   *
+   * @param dto 结构化对话请求
+   * @returns 包含结构化数据和元数据的响应
+   */
+  async structuredChat(
+    dto: StructuredChatRequestDto,
+  ): Promise<StructuredResponseDto> {
+    this.logger.log(
+      `[LCEL-Structured] 多轮结构化输出，Schema: ${dto.schemaName}, ` +
+        `提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    this.validateStructuredOutputSupport(dto.provider, dto.model);
+
+    const schema = this.schemaRegistry.getSchema(dto.schemaName);
+    const model = this.modelFactory.createChatModel(dto.provider, {
+      model: dto.model,
+      temperature: dto.temperature ?? 0,
+      maxTokens: dto.maxTokens,
+    });
+
+    const { chain, input } = this.chainBuilder.buildStructuredChatChain(
+      model,
+      schema,
+      dto.messages,
+      dto.systemPrompt,
+    );
+
+    const result = (await chain.invoke(input)) as {
+      raw: AIMessageChunk;
+      parsed: Record<string, unknown>;
+    };
+
+    this.guardParsedResult(result.parsed, dto.schemaName);
+
+    return {
+      schemaName: dto.schemaName,
+      data: result.parsed,
+      usage: this.extractTokenUsage(result.raw),
+      finishReason: this.extractFinishReason(result.raw),
+    };
+  }
+
+  /**
+   * 单轮快速提取 + 结构化输出
+   *
+   * 适用于从一段文本中直接提取结构化信息的场景（如情感分析、实体提取）。
+   *
+   * @param dto 结构化提取请求
+   * @returns 包含结构化数据和元数据的响应
+   */
+  async structuredExtract(
+    dto: StructuredExtractRequestDto,
+  ): Promise<StructuredResponseDto> {
+    this.logger.log(
+      `[LCEL-Structured] 快速提取，Schema: ${dto.schemaName}, ` +
+        `提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    this.validateStructuredOutputSupport(dto.provider, dto.model);
+
+    const schema = this.schemaRegistry.getSchema(dto.schemaName);
+    const model = this.modelFactory.createChatModel(dto.provider, {
+      model: dto.model,
+      temperature: dto.temperature ?? 0,
+    });
+
+    const { chain, input } = this.chainBuilder.buildStructuredQuickChatChain(
+      model,
+      schema,
+      dto.prompt,
+      dto.systemPrompt,
+    );
+
+    const result = (await chain.invoke(input)) as {
+      raw: AIMessageChunk;
+      parsed: Record<string, unknown>;
+    };
+
+    this.guardParsedResult(result.parsed, dto.schemaName);
+
+    return {
+      schemaName: dto.schemaName,
+      data: result.parsed,
+      usage: this.extractTokenUsage(result.raw),
+      finishReason: this.extractFinishReason(result.raw),
+    };
+  }
+
+  /**
+   * 校验模型是否支持结构化输出
+   *
+   * 从 MODEL_REGISTRY 中查找模型定义，依据 capabilities.toolCalls
+   * 判断该模型是否支持 tool calling（withStructuredOutput 的默认底层机制）。
+   *
+   * 对于注册表中未声明的模型（如用户自定义模型），放行并记录警告——
+   * 避免因注册表不全而误拦，真正不支持时由 LangChain 层抛出运行时错误。
+   */
+  private validateStructuredOutputSupport(
+    provider: AiProvider,
+    modelId: string,
+  ): void {
+    const modelDef = MODEL_REGISTRY.find(
+      (m) => m.id === modelId && m.provider === provider,
+    );
+
+    if (!modelDef) {
+      this.logger.warn(
+        `模型 "${modelId}" 未在 MODEL_REGISTRY 中注册，跳过结构化输出能力预检`,
+      );
+      return;
+    }
+
+    if (!modelDef.capabilities.toolCalls) {
+      throw new BadRequestException(
+        `模型 "${modelDef.name}"（${modelId}）不支持 tool calling，` +
+          '无法使用结构化输出（withStructuredOutput）。' +
+          '请切换到支持 tool calling 的模型。',
+      );
+    }
+  }
+
+  /**
+   * 结构化输出结果兜底校验
+   *
+   * withStructuredOutput 内部已做 Zod parse，但某些边界情况（如模型返回空
+   * tool_call、网络截断等）可能导致 parsed 为 null/undefined。
+   * 此处作为最后一道防线，确保不会将无效数据静默返回给客户端。
+   */
+  private guardParsedResult(
+    parsed: Record<string, unknown> | null | undefined,
+    schemaName: string,
+  ): asserts parsed is Record<string, unknown> {
+    if (!parsed || typeof parsed !== 'object') {
+      throw new BadRequestException(
+        `结构化输出解析失败（Schema: ${schemaName}）。` +
+          '模型未返回有效的结构化数据，可能原因：' +
+          '模型不支持 tool calling、返回格式异常或网络中断。',
+      );
+    }
   }
 
   // ============================================================

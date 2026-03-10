@@ -104,8 +104,8 @@
 <!-- NEW_AI_CORE_START -->
 - ✅ **[041. LCEL 管道与提示词工程 (Prompt Template & LCEL)](notes/041-lcel-and-prompt-template.md)**
   - 基于完全隔离设计，引入 ChatPromptTemplate 与 `.pipe()` 组合语法，构建 prompt | model 基础管道
-- 🔲 **[042. 结构化输出与 Parser (Structured Output)](notes/042-structured-output.md)**
-  - 结合 Zod / class-validator 实现 `withStructuredOutput`，让 AI 返回强类型 JSON 对象
+- ✅ **[042. 结构化输出与 Parser (Structured Output)](notes/042-structured-output.md)**
+  - 通过 Zod Schema + `withStructuredOutput` 让 AI 返回强类型 JSON 对象，Schema Registry 注册表模式管理预定义 Schema
 - 🔲 **[043. 函数调用底层机制 (Tool Calling)](notes/043-tool-calling.md)**
   - 打通 ToolRegistry，实现具体工具，通过 `.bindTools()` 挂载并实现工具分发循环
 - 🔲 **[044. 生产级多轮会话管理 (Memory & Redis)](notes/044-memory-and-redis.md)**

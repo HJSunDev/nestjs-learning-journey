@@ -10,6 +10,7 @@ import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { AgentRegistry } from './agents/agent.registry';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
+import { SchemaRegistry } from './schemas';
 
 /**
  * AI 模块
@@ -23,6 +24,9 @@ import { ChatChainBuilder } from './chains';
  * 041 新增 LCEL 抽象层：
  * - LcelController & LcelService: 独立的 LCEL 管道端点与服务（与过程式隔离）
  * - ChatChainBuilder:             LCEL 链构建器（组装 prompt → model 管道）
+ *
+ * 042 新增结构化输出层：
+ * - SchemaRegistry:  Zod Schema 注册表（管理可用于 withStructuredOutput 的预定义 Schema）
  *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
@@ -42,6 +46,7 @@ import { ChatChainBuilder } from './chains';
     AgentRegistry,
     AiStreamAdapter,
     ChatChainBuilder,
+    SchemaRegistry,
   ],
   exports: [
     AiService,
@@ -50,6 +55,7 @@ import { ChatChainBuilder } from './chains';
     ToolRegistry,
     AgentRegistry,
     ChatChainBuilder,
+    SchemaRegistry,
   ],
 })
 export class AiModule {}
