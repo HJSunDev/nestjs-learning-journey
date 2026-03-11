@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { Runnable } from '@langchain/core/runnables';
+import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { ZodObject, ZodRawShape } from 'zod';
 import { convertToLangChainMessages } from '../utils';
 import {
@@ -43,6 +44,7 @@ export interface PreparedChain {
  * 扩展方向：
  * - 042: 通过 withStructuredOutput 包装模型 → prompt.pipe(structuredModel)
  * - 043: 通过 .bindTools() 挂载工具 → prompt.pipe(modelWithTools)
+ *        完整的工具调用循环（多轮迭代）由 ToolCallingLoop 负责
  * - 046: 通过 .withRetry() 追加重试 → chain.withRetry({ stopAfterAttempt: 3 })
  */
 @Injectable()
@@ -161,6 +163,44 @@ export class ChatChainBuilder {
     return {
       chain: prompt.pipe(structuredModel),
       input: { input: userInput },
+    };
+  }
+
+  /**
+   * 构建工具调用 LCEL 管道
+   *
+   * 管道结构：ChatPromptTemplate → model.bindTools(tools)
+   *
+   * model.bindTools() 将工具定义注入到模型的请求参数中，
+   * 模型在推理时可以选择调用一个或多个工具（返回 tool_calls），
+   * 也可以直接返回文本（不调用工具）。
+   *
+   * 此方法构建的是"单次调用"链——仅触发一次模型推理。
+   * 完整的工具调用循环（模型调用工具 → 执行 → 回传结果 → 再推理）
+   * 由 ToolCallingLoop 负责编排。
+   *
+   * @param model         由 AiModelFactory 创建的 LangChain 模型实例
+   * @param tools         要绑定的 LangChain 工具实例列表
+   * @param messages      项目内部消息列表
+   * @param systemPrompt  可选的系统提示词
+   * @returns PreparedChain，chain.invoke(input) 返回 AIMessage（可能含 tool_calls）
+   */
+  buildToolCallingChain(
+    model: BaseChatModel,
+    tools: StructuredToolInterface[],
+    messages: Message[],
+    systemPrompt?: string,
+  ): PreparedChain {
+    if (typeof model.bindTools !== 'function') {
+      throw new Error('当前模型不支持 bindTools 方法，无法构建工具调用链。');
+    }
+
+    const prompt = createChatPrompt(systemPrompt, hasSystemMessage(messages));
+    const modelWithTools = model.bindTools(tools);
+
+    return {
+      chain: prompt.pipe(modelWithTools),
+      input: { messages: convertToLangChainMessages(messages) },
     };
   }
 }

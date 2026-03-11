@@ -106,8 +106,8 @@
   - 基于完全隔离设计，引入 ChatPromptTemplate 与 `.pipe()` 组合语法，构建 prompt | model 基础管道
 - ✅ **[042. 结构化输出与 Parser (Structured Output)](notes/042-structured-output.md)**
   - 通过 Zod Schema + `withStructuredOutput` 让 AI 返回强类型 JSON 对象，Schema Registry 注册表模式管理预定义 Schema
-- 🔲 **[043. 函数调用底层机制 (Tool Calling)](notes/043-tool-calling.md)**
-  - 打通 ToolRegistry，实现具体工具，通过 `.bindTools()` 挂载并实现工具分发循环
+- ✅ **[043. 函数调用底层机制 (Tool Calling)](notes/043-tool-calling.md)**
+  - 重构 ToolRegistry 为 LangChain 原生 StructuredTool，实现 3 个内置工具，构建 Agentic 工具调用循环引擎
 - 🔲 **[044. 生产级多轮会话管理 (Memory & Redis)](notes/044-memory-and-redis.md)**
   - 基于 Redis 实现 `RedisChatMessageHistory`、对话窗口裁剪，打造有状态会话 API
 - 🔲 **[045. RAG 检索增强生成 (Retriever & Vector Store)](notes/045-rag-and-vector-store.md)**

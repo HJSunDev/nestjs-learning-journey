@@ -27,6 +27,8 @@ import {
   StructuredChatRequestDto,
   StructuredExtractRequestDto,
   StructuredResponseDto,
+  ToolCallingChatRequestDto,
+  ToolCallingResponseDto,
 } from './dto';
 import { AiExceptionFilter } from './filters/ai-exception.filter';
 import { Public } from 'src/common/decorators/public.decorator';
@@ -39,6 +41,7 @@ import { AiStreamAdapter } from './adapters/stream.adapter';
  * 路由前缀设为 'ai/lcel'。
  *
  * 042 章节扩展：新增 /structured/* 端点，支持通过 withStructuredOutput 获取强类型 JSON 输出。
+ * 043 章节扩展：新增 /tool-calling/* 端点，支持 Agentic 工具调用循环。
  */
 @ApiTags('AI 服务 (LCEL 管道版)')
 @ApiBearerAuth()
@@ -203,5 +206,73 @@ export class LcelController {
     @Body() dto: StructuredExtractRequestDto,
   ): Promise<StructuredResponseDto> {
     return this.lcelService.structuredExtract(dto);
+  }
+
+  // ============================================================
+  // 043 工具调用端点
+  // ============================================================
+
+  @Public()
+  @Get('tools')
+  @ApiOperation({
+    summary: '获取可用的工具列表',
+    description:
+      '返回所有已注册的工具名称和描述。' +
+      '客户端据此选择在 tool-calling 请求中启用哪些工具。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '可用工具列表',
+  })
+  getAvailableTools() {
+    return this.lcelService.getAvailableTools();
+  }
+
+  @Public()
+  @Post('tool-calling/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '工具调用对话（Agentic Loop）',
+    description:
+      '模型自主决定是否调用工具。内部实现 Agentic Loop：' +
+      'model.bindTools → invoke → 检查 tool_calls → 执行工具 → 回传结果 → 再次推理，' +
+      '循环直到模型生成最终文本响应或达到最大轮次。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '工具调用对话成功',
+    type: ToolCallingResponseDto,
+  })
+  async toolCallingChat(
+    @Body() dto: ToolCallingChatRequestDto,
+  ): Promise<ToolCallingResponseDto> {
+    return this.lcelService.toolChat(dto);
+  }
+
+  @Public()
+  @Post('tool-calling/chat/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '流式工具调用对话',
+    description:
+      '与非流式版本相同的 Agentic Loop，区别在于：' +
+      '工具调用轮次通过 TOOL_CALL/TOOL_RESULT 事件实时推送，' +
+      '最终文本响应通过 TEXT 事件逐 chunk 输出。',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiResponse({
+    status: 200,
+    description: 'SSE 流式响应（含工具调用事件）',
+  })
+  streamToolCallingChat(
+    @Body() dto: ToolCallingChatRequestDto,
+    @Res() res: Response,
+  ): void {
+    const stream$ = this.lcelService.streamToolChat(dto);
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: 'LCEL工具调用对话',
+      provider: dto.provider,
+      model: dto.model,
+    });
   }
 }

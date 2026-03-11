@@ -5,6 +5,8 @@ import { AiModelFactory } from './factories/model.factory';
 import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry, type SchemaListItem } from './schemas';
+import { ToolRegistry, type ToolListItem } from './tools/tool.registry';
+import { ToolCallingLoop } from './tools/tool-calling.loop';
 import { AiProvider, ReasoningMode, StreamChunkType } from './constants';
 import { MODEL_REGISTRY } from './constants/model-registry';
 import {
@@ -15,6 +17,8 @@ import {
   StructuredChatRequestDto,
   StructuredExtractRequestDto,
   StructuredResponseDto,
+  ToolCallingChatRequestDto,
+  ToolCallingResponseDto,
 } from './dto';
 import { Observable, Subject } from 'rxjs';
 import { StreamChunk } from './interfaces';
@@ -31,6 +35,10 @@ import { StreamChunk } from './interfaces';
  * 042 章节扩展：
  * - 新增 structuredChat / structuredExtract 方法
  * - 通过 withStructuredOutput 让模型返回强类型 JSON 对象
+ *
+ * 043 章节扩展：
+ * - 新增 toolChat / streamToolChat 方法
+ * - 通过 ToolCallingLoop 实现 Agentic 工具调用循环
  */
 @Injectable()
 export class LcelService {
@@ -41,6 +49,8 @@ export class LcelService {
     private readonly reasoningNormalizer: ReasoningNormalizer,
     private readonly chainBuilder: ChatChainBuilder,
     private readonly schemaRegistry: SchemaRegistry,
+    private readonly toolRegistry: ToolRegistry,
+    private readonly toolCallingLoop: ToolCallingLoop,
   ) {}
 
   /**
@@ -387,6 +397,128 @@ export class LcelService {
         `结构化输出解析失败（Schema: ${schemaName}）。` +
           '模型未返回有效的结构化数据，可能原因：' +
           '模型不支持 tool calling、返回格式异常或网络中断。',
+      );
+    }
+  }
+
+  // ============================================================
+  // 043 工具调用方法
+  // ============================================================
+
+  /**
+   * 获取所有可用的工具列表
+   *
+   * @returns 工具名称和描述列表
+   */
+  getAvailableTools(): ToolListItem[] {
+    return this.toolRegistry.listTools();
+  }
+
+  /**
+   * 工具调用对话（非流式）
+   *
+   * 核心流程：
+   * 1. 创建模型 → 2. 委托 ToolCallingLoop 执行工具调用循环
+   * → 3. 返回最终文本响应 + 工具调用历史
+   *
+   * ToolCallingLoop 内部：
+   * model.bindTools(tools) → invoke → 检查 tool_calls
+   * → 有则执行工具、追加 ToolMessage、再次 invoke → 循环直到无 tool_calls
+   *
+   * @param dto 工具调用对话请求
+   * @returns 包含最终文本和工具调用历史的响应
+   */
+  async toolChat(
+    dto: ToolCallingChatRequestDto,
+  ): Promise<ToolCallingResponseDto> {
+    this.logger.log(
+      `[LCEL-ToolCalling] 工具调用对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    this.validateToolCallingSupport(dto.provider, dto.model);
+
+    const model = this.modelFactory.createChatModel(dto.provider, {
+      model: dto.model,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+    });
+
+    const result = await this.toolCallingLoop.execute({
+      model,
+      messages: dto.messages,
+      systemPrompt: dto.systemPrompt,
+      toolNames: dto.tools,
+      maxIterations: dto.maxToolRounds,
+    });
+
+    return {
+      content: result.content,
+      rounds: result.rounds,
+      totalRounds: result.totalRounds,
+      usage: result.usage,
+      finishReason: result.finishReason,
+    };
+  }
+
+  /**
+   * 流式工具调用对话
+   *
+   * 工具调用轮次通过 TOOL_CALL / TOOL_RESULT 事件实时推送，
+   * 最终文本响应通过 TEXT 事件逐 chunk 输出。
+   *
+   * @param dto 工具调用对话请求
+   * @returns StreamChunk 的 Observable 流
+   */
+  streamToolChat(dto: ToolCallingChatRequestDto): Observable<StreamChunk> {
+    this.logger.log(
+      `[LCEL-ToolCalling] 流式工具调用对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    this.validateToolCallingSupport(dto.provider, dto.model);
+
+    const model = this.modelFactory.createChatModel(dto.provider, {
+      model: dto.model,
+      streaming: true,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+    });
+
+    const subject = this.toolCallingLoop.streamExecute({
+      model,
+      messages: dto.messages,
+      systemPrompt: dto.systemPrompt,
+      toolNames: dto.tools,
+      maxIterations: dto.maxToolRounds,
+    });
+
+    return subject.asObservable();
+  }
+
+  /**
+   * 校验模型是否支持工具调用
+   *
+   * 工具调用（Tool Calling）要求模型支持 function calling 能力。
+   * 对于注册表中未声明的模型，放行并记录警告。
+   */
+  private validateToolCallingSupport(
+    provider: AiProvider,
+    modelId: string,
+  ): void {
+    const modelDef = MODEL_REGISTRY.find(
+      (m) => m.id === modelId && m.provider === provider,
+    );
+
+    if (!modelDef) {
+      this.logger.warn(
+        `模型 "${modelId}" 未在 MODEL_REGISTRY 中注册，跳过工具调用能力预检`,
+      );
+      return;
+    }
+
+    if (!modelDef.capabilities.toolCalls) {
+      throw new BadRequestException(
+        `模型 "${modelDef.name}"（${modelId}）不支持 tool calling，` +
+          '无法使用工具调用功能。请切换到支持 tool calling 的模型。',
       );
     }
   }

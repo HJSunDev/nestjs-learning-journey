@@ -5,6 +5,7 @@ import { AiService } from './ai.service';
 import { LcelController } from './lcel.controller';
 import { LcelService } from './lcel.service';
 import { ToolRegistry } from './tools/tool.registry';
+import { ToolCallingLoop } from './tools/tool-calling.loop';
 import { AiModelFactory } from './factories/model.factory';
 import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { AgentRegistry } from './agents/agent.registry';
@@ -28,6 +29,11 @@ import { SchemaRegistry } from './schemas';
  * 042 新增结构化输出层：
  * - SchemaRegistry:  Zod Schema 注册表（管理可用于 withStructuredOutput 的预定义 Schema）
  *
+ * 043 新增工具调用层：
+ * - ToolCallingLoop:  Agentic 工具调用循环引擎（bindTools → invoke → 执行工具 → 再推理）
+ * - ToolRegistry 重构: 从自定义 IAiTool 迁移到 LangChain 原生 StructuredTool
+ * - 内置工具:         get_current_time / calculate / get_weather
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -43,6 +49,7 @@ import { SchemaRegistry } from './schemas';
     AiModelFactory,
     ReasoningNormalizer,
     ToolRegistry,
+    ToolCallingLoop,
     AgentRegistry,
     AiStreamAdapter,
     ChatChainBuilder,
@@ -53,6 +60,7 @@ import { SchemaRegistry } from './schemas';
     LcelService,
     ReasoningNormalizer,
     ToolRegistry,
+    ToolCallingLoop,
     AgentRegistry,
     ChatChainBuilder,
     SchemaRegistry,
