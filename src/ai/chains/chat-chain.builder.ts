@@ -7,6 +7,7 @@ import { convertToLangChainMessages } from '../utils';
 import {
   createChatPrompt,
   createQuickChatPrompt,
+  createMemoryChatPrompt,
   hasSystemMessage,
 } from '../prompts';
 import type { Message } from '../interfaces';
@@ -22,6 +23,21 @@ export interface PreparedChain {
   chain: Runnable;
   /** 预组装的链输入（模板变量 → 值的映射） */
   input: Record<string, unknown>;
+}
+
+/**
+ * Memory 链的预组装结果
+ *
+ * 与 PreparedChain 不同，不包含 input（输入在运行时由 RunnableWithMessageHistory 注入），
+ * 而是暴露 inputMessagesKey / historyMessagesKey 供外层配置 RunnableWithMessageHistory。
+ */
+export interface PreparedMemoryChain {
+  /** LCEL 可执行链（prompt → model 管道） */
+  chain: Runnable;
+  /** 输入消息的键名（对应当前轮次用户输入） */
+  inputMessagesKey: string;
+  /** 历史消息的键名（对应 Redis 中加载的历史） */
+  historyMessagesKey: string;
 }
 
 /**
@@ -45,6 +61,8 @@ export interface PreparedChain {
  * - 042: 通过 withStructuredOutput 包装模型 → prompt.pipe(structuredModel)
  * - 043: 通过 .bindTools() 挂载工具 → prompt.pipe(modelWithTools)
  *        完整的工具调用循环（多轮迭代）由 ToolCallingLoop 负责
+ * - 044: 通过 createMemoryChatPrompt 构建带 history 占位符的链，
+ *        由 RunnableWithMessageHistory 在运行时注入 Redis 历史
  * - 046: 通过 .withRetry() 追加重试 → chain.withRetry({ stopAfterAttempt: 3 })
  */
 @Injectable()
@@ -163,6 +181,33 @@ export class ChatChainBuilder {
     return {
       chain: prompt.pipe(structuredModel),
       input: { input: userInput },
+    };
+  }
+
+  /**
+   * 构建有状态会话（Memory）LCEL 管道
+   *
+   * 管道结构：ChatPromptTemplate([SystemMessage?], MessagesPlaceholder('history'), '{input}') → Model
+   *
+   * 与 buildChatChain 的核心差异：
+   * - 使用 history 占位符接收 Redis 中的历史消息（由 RunnableWithMessageHistory 注入）
+   * - 使用 {input} 模板变量接收当前轮次用户文本（而非完整消息列表）
+   * - 返回 PreparedMemoryChain 而非 PreparedChain，暴露键名供外层配置
+   *
+   * @param model         由 AiModelFactory 创建的 LangChain 模型实例
+   * @param systemPrompt  可选的系统提示词
+   * @returns PreparedMemoryChain，由 LcelService 包装 RunnableWithMessageHistory
+   */
+  buildMemoryChatChain(
+    model: BaseChatModel,
+    systemPrompt?: string,
+  ): PreparedMemoryChain {
+    const prompt = createMemoryChatPrompt(systemPrompt);
+
+    return {
+      chain: prompt.pipe(model),
+      inputMessagesKey: 'input',
+      historyMessagesKey: 'history',
     };
   }
 

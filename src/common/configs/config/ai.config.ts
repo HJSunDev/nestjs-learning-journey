@@ -85,4 +85,15 @@ export default registerAs('ai', () => ({
     // 最大输出 Token 数
     maxTokens: parseInt(process.env.AI_DEFAULT_MAX_TOKENS || '4096', 10),
   },
+
+  // 会话记忆配置
+  memory: {
+    // 默认会话 TTL (Time To Live，生存时间，单位：秒)
+    defaultSessionTTL: parseInt(
+      process.env.AI_MEMORY_SESSION_TTL || '3600',
+      10,
+    ),
+    defaultWindowSize: parseInt(process.env.AI_MEMORY_WINDOW_SIZE || '20', 10),
+    keyPrefix: process.env.AI_MEMORY_KEY_PREFIX || 'chat_history:',
+  },
 }));

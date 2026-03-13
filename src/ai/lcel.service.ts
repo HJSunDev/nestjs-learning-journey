@@ -1,12 +1,15 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import type { AIMessageChunk } from '@langchain/core/messages';
 import type { Runnable } from '@langchain/core/runnables';
+import { RunnableWithMessageHistory } from '@langchain/core/runnables';
 import { AiModelFactory } from './factories/model.factory';
 import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry, type SchemaListItem } from './schemas';
 import { ToolRegistry, type ToolListItem } from './tools/tool.registry';
 import { ToolCallingLoop } from './tools/tool-calling.loop';
+import { ChatHistoryFactory } from './memory';
+import { SessionManagerService } from './memory';
 import { AiProvider, ReasoningMode, StreamChunkType } from './constants';
 import { MODEL_REGISTRY } from './constants/model-registry';
 import {
@@ -19,6 +22,11 @@ import {
   StructuredResponseDto,
   ToolCallingChatRequestDto,
   ToolCallingResponseDto,
+  MemoryChatRequestDto,
+  MemoryChatResponseDto,
+  SessionHistoryResponseDto,
+  SessionListResponseDto,
+  ClearSessionResponseDto,
 } from './dto';
 import { Observable, Subject } from 'rxjs';
 import { StreamChunk } from './interfaces';
@@ -39,6 +47,11 @@ import { StreamChunk } from './interfaces';
  * 043 章节扩展：
  * - 新增 toolChat / streamToolChat 方法
  * - 通过 ToolCallingLoop 实现 Agentic 工具调用循环
+ *
+ * 044 章节扩展：
+ * - 新增 memoryChat / streamMemoryChat 方法
+ * - 通过 RunnableWithMessageHistory + Redis 实现有状态多轮会话
+ * - 新增 getSessionHistory / listSessions / clearSession 会话管理方法
  */
 @Injectable()
 export class LcelService {
@@ -51,6 +64,8 @@ export class LcelService {
     private readonly schemaRegistry: SchemaRegistry,
     private readonly toolRegistry: ToolRegistry,
     private readonly toolCallingLoop: ToolCallingLoop,
+    private readonly chatHistoryFactory: ChatHistoryFactory,
+    private readonly sessionManager: SessionManagerService,
   ) {}
 
   /**
@@ -524,6 +539,170 @@ export class LcelService {
   }
 
   // ============================================================
+  // 044 有状态会话（Memory）方法
+  // ============================================================
+
+  /**
+   * 有状态会话对话（非流式）
+   *
+   * 核心流程：
+   * 1. 构建 prompt → model 管道（带 history 占位符）
+   * 2. 用 RunnableWithMessageHistory 包装，注入 Redis 历史管理
+   * 3. invoke 时自动：加载历史 → 拼接输入 → 推理 → 持久化新消息
+   *
+   * @param dto 有状态会话请求
+   * @returns 包含 sessionId 的对话响应
+   */
+  async memoryChat(dto: MemoryChatRequestDto): Promise<MemoryChatResponseDto> {
+    this.logger.log(
+      `[LCEL-Memory] 有状态对话，会话: ${dto.sessionId}, ` +
+        `提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const modelKwargs = this.resolveModelKwargs(
+      dto.provider,
+      dto.model,
+      dto.enableReasoning,
+    );
+
+    const model = this.modelFactory.createChatModel(dto.provider, {
+      model: dto.model,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      modelKwargs,
+    });
+
+    const chainWithHistory = this.buildMemoryChain(model, dto);
+    const config = { configurable: { sessionId: dto.sessionId } };
+    const result = (await chainWithHistory.invoke(
+      { input: dto.input },
+      config,
+    )) as AIMessageChunk;
+
+    const normalized = this.reasoningNormalizer.normalize(
+      dto.provider,
+      result as unknown as Record<string, unknown>,
+    );
+
+    return {
+      sessionId: dto.sessionId,
+      content: normalized.content,
+      reasoning: normalized.reasoning ?? undefined,
+      usage: this.extractTokenUsage(result),
+      finishReason: this.extractFinishReason(result),
+    };
+  }
+
+  /**
+   * 有状态会话对话（流式）
+   *
+   * 与非流式版本共享同一条 RunnableWithMessageHistory 包装的链，
+   * 区别在于调用 .stream() 而非 .invoke()。
+   * 流结束后，RunnableWithMessageHistory 自动将完整响应持久化到 Redis。
+   *
+   * @param dto 有状态会话请求
+   * @returns StreamChunk 的 Observable 流
+   */
+  streamMemoryChat(dto: MemoryChatRequestDto): Observable<StreamChunk> {
+    this.logger.log(
+      `[LCEL-Memory] 流式有状态对话，会话: ${dto.sessionId}, ` +
+        `提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const modelKwargs = this.resolveModelKwargs(
+      dto.provider,
+      dto.model,
+      dto.enableReasoning,
+    );
+
+    const model = this.modelFactory.createChatModel(dto.provider, {
+      model: dto.model,
+      streaming: true,
+      maxTokens: dto.maxTokens,
+      modelKwargs,
+    });
+
+    const chainWithHistory = this.buildMemoryChain(model, dto);
+    const config = { configurable: { sessionId: dto.sessionId } };
+    const subject = new Subject<StreamChunk>();
+
+    void this.executeStream(
+      chainWithHistory,
+      dto.provider,
+      { input: dto.input },
+      subject,
+      config,
+    );
+
+    return subject.asObservable();
+  }
+
+  /**
+   * 获取指定会话的历史消息
+   */
+  async getSessionHistory(
+    sessionId: string,
+  ): Promise<SessionHistoryResponseDto> {
+    const [messages, info] = await Promise.all([
+      this.sessionManager.getSessionMessages(sessionId),
+      this.sessionManager.getSessionInfo(sessionId),
+    ]);
+
+    return {
+      sessionId,
+      messages,
+      messageCount: info.messageCount,
+      ttl: info.ttl,
+    };
+  }
+
+  /**
+   * 列出所有活跃会话
+   */
+  async listSessions(): Promise<SessionListResponseDto> {
+    // listSessions方法列出所有活跃会话，返回会话列表和总数
+    const sessions = await this.sessionManager.listSessions();
+    return { sessions, total: sessions.length };
+  }
+
+  /**
+   * 清除指定会话的全部历史
+   */
+  async clearSession(sessionId: string): Promise<ClearSessionResponseDto> {
+    const { messageCount } = await this.sessionManager.clearSession(sessionId);
+    return {
+      sessionId,
+      deletedMessageCount: messageCount,
+      message: `会话 ${sessionId} 已清除，共删除 ${messageCount} 条消息`,
+    };
+  }
+
+  /**
+   * 构建被 RunnableWithMessageHistory 包装的链
+   *
+   * 将 ChatChainBuilder 产出的管道与 ChatHistoryFactory 组合，
+   * 形成完整的有状态对话链。
+   */
+  private buildMemoryChain(
+    model: ReturnType<AiModelFactory['createChatModel']>,
+    dto: MemoryChatRequestDto,
+  ) {
+    const { chain, inputMessagesKey, historyMessagesKey } =
+      this.chainBuilder.buildMemoryChatChain(model, dto.systemPrompt);
+
+    return new RunnableWithMessageHistory({
+      runnable: chain,
+      getMessageHistory: (sessionId: string) =>
+        this.chatHistoryFactory.create(sessionId, {
+          ttl: dto.sessionTTL,
+          windowSize: dto.maxHistoryLength,
+        }),
+      inputMessagesKey,
+      historyMessagesKey,
+    });
+  }
+
+  // ============================================================
   // 内部方法 (为保持 038 纯净，在此处克隆工具方法，遵循隔离原则)
   // ============================================================
 
@@ -552,15 +731,17 @@ export class LcelService {
    * 处理 LCEL 链的流式输出并推送到 RxJS Subject
    *
    * 接收泛化的 Runnable（而非 BaseChatModel），使其可与任意 LCEL 管道配合。
+   * 044 扩展：新增可选 config 参数，供 RunnableWithMessageHistory 传入 sessionId。
    */
   private async executeStream(
     chain: Runnable,
     provider: string,
     chainInput: Record<string, unknown>,
     subject: Subject<StreamChunk>,
+    config?: Record<string, unknown>,
   ) {
     try {
-      const stream = await chain.stream(chainInput);
+      const stream = await chain.stream(chainInput, config);
 
       let usage: ReturnType<typeof this.extractTokenUsage>;
       let finishReason: string | undefined;

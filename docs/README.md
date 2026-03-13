@@ -108,8 +108,8 @@
   - 通过 Zod Schema + `withStructuredOutput` 让 AI 返回强类型 JSON 对象，Schema Registry 注册表模式管理预定义 Schema
 - ✅ **[043. 函数调用底层机制 (Tool Calling)](notes/043-tool-calling.md)**
   - 重构 ToolRegistry 为 LangChain 原生 StructuredTool，实现 3 个内置工具，构建 Agentic 工具调用循环引擎
-- 🔲 **[044. 生产级多轮会话管理 (Memory & Redis)](notes/044-memory-and-redis.md)**
-  - 基于 Redis 实现 `RedisChatMessageHistory`、对话窗口裁剪，打造有状态会话 API
+- ✅ **[044. 生产级多轮会话管理 (Memory & Redis)](notes/044-memory-and-redis.md)**
+  - 自行实现 RedisChatHistory（零新依赖），RunnableWithMessageHistory 有状态链，WindowedChatHistory 滑动窗口裁剪
 - 🔲 **[045. RAG 检索增强生成 (Retriever & Vector Store)](notes/045-rag-and-vector-store.md)**
   - 跑通 DocumentLoader → TextSplitter → Embeddings → Retriever 全链路，消除模型的知识盲区
 - 🔲 **[046. 生产级可观测性与韧性 (Observability & Resilience)](notes/046-observability-and-resilience.md)**

@@ -12,6 +12,7 @@ import { AgentRegistry } from './agents/agent.registry';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
+import { ChatHistoryFactory, SessionManagerService } from './memory';
 
 /**
  * AI 模块
@@ -34,6 +35,12 @@ import { SchemaRegistry } from './schemas';
  * - ToolRegistry 重构: 从自定义 IAiTool 迁移到 LangChain 原生 StructuredTool
  * - 内置工具:         get_current_time / calculate / get_weather
  *
+ * 044 新增有状态会话层：
+ * - ChatHistoryFactory:    对话历史工厂（按 sessionId 创建 Redis 存储实例）
+ * - SessionManagerService: 会话管理服务（查询、删除、列出会话）
+ * - RedisChatHistory:      自行实现的 BaseChatMessageHistory（复用 ioredis，零新依赖）
+ * - WindowedChatHistory:   滑动窗口装饰器（控制模型上下文长度）
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -54,6 +61,8 @@ import { SchemaRegistry } from './schemas';
     AiStreamAdapter,
     ChatChainBuilder,
     SchemaRegistry,
+    ChatHistoryFactory,
+    SessionManagerService,
   ],
   exports: [
     AiService,
@@ -64,6 +73,8 @@ import { SchemaRegistry } from './schemas';
     AgentRegistry,
     ChatChainBuilder,
     SchemaRegistry,
+    ChatHistoryFactory,
+    SessionManagerService,
   ],
 })
 export class AiModule {}

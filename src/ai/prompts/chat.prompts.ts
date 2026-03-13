@@ -59,6 +59,35 @@ export function createQuickChatPrompt(
 }
 
 /**
+ * 构建有状态会话（Memory）的提示模板
+ *
+ * 组合结构：[SystemMessage?] → MessagesPlaceholder('history') → HumanMessage('{input}')
+ *
+ * 与 createChatPrompt 的核心差异：
+ * - history 占位符：由 RunnableWithMessageHistory 自动注入 Redis 中的历史消息
+ * - input 模板变量：接收当前轮次的用户文本（而非完整消息列表）
+ *
+ * 这种拆分使得客户端只需发送单条消息，服务端自动管理上下文。
+ *
+ * @param systemPrompt 可选的系统提示词文本
+ * @returns ChatPromptTemplate 实例，输入变量：{ history: BaseMessage[], input: string }
+ */
+export function createMemoryChatPrompt(
+  systemPrompt?: string,
+): ChatPromptTemplate {
+  const parts: Parameters<typeof ChatPromptTemplate.fromMessages>[0] = [];
+
+  if (systemPrompt) {
+    parts.push(new SystemMessage(systemPrompt));
+  }
+
+  parts.push(new MessagesPlaceholder('history'));
+  parts.push(['human', '{input}']);
+
+  return ChatPromptTemplate.fromMessages(parts);
+}
+
+/**
  * 检查消息列表中是否包含 system 角色消息
  *
  * 与 convertToLangChainMessages 中的同类检查一致。

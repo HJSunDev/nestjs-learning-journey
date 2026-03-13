@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
+  Param,
   Body,
   Res,
   HttpCode,
@@ -29,6 +31,11 @@ import {
   StructuredResponseDto,
   ToolCallingChatRequestDto,
   ToolCallingResponseDto,
+  MemoryChatRequestDto,
+  MemoryChatResponseDto,
+  SessionHistoryResponseDto,
+  SessionListResponseDto,
+  ClearSessionResponseDto,
 } from './dto';
 import { AiExceptionFilter } from './filters/ai-exception.filter';
 import { Public } from 'src/common/decorators/public.decorator';
@@ -42,6 +49,7 @@ import { AiStreamAdapter } from './adapters/stream.adapter';
  *
  * 042 章节扩展：新增 /structured/* 端点，支持通过 withStructuredOutput 获取强类型 JSON 输出。
  * 043 章节扩展：新增 /tool-calling/* 端点，支持 Agentic 工具调用循环。
+ * 044 章节扩展：新增 /memory/* 端点，支持基于 Redis 的有状态多轮会话管理。
  */
 @ApiTags('AI 服务 (LCEL 管道版)')
 @ApiBearerAuth()
@@ -274,5 +282,108 @@ export class LcelController {
       provider: dto.provider,
       model: dto.model,
     });
+  }
+
+  // ============================================================
+  // 044 有状态会话（Memory）端点
+  // ============================================================
+
+  @Public()
+  @Post('memory/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '有状态会话对话',
+    description:
+      '基于 sessionId 的有状态对话。服务端自动从 Redis 加载历史、推理、持久化新消息。' +
+      '客户端只需发送当前轮次的文本，无需维护消息列表。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '对话成功',
+    type: MemoryChatResponseDto,
+  })
+  async memoryChat(
+    @Body() dto: MemoryChatRequestDto,
+  ): Promise<MemoryChatResponseDto> {
+    return this.lcelService.memoryChat(dto);
+  }
+
+  @Public()
+  @Post('memory/chat/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '流式有状态会话对话',
+    description:
+      '与非流式版本相同的有状态会话机制，区别在于通过 SSE 逐 chunk 输出。' +
+      '流结束后自动将完整响应持久化到 Redis。',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiResponse({
+    status: 200,
+    description: 'SSE 流式响应',
+  })
+  streamMemoryChat(
+    @Body() dto: MemoryChatRequestDto,
+    @Res() res: Response,
+  ): void {
+    const stream$ = this.lcelService.streamMemoryChat(dto);
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: 'LCEL有状态对话',
+      provider: dto.provider,
+      model: dto.model,
+    });
+  }
+
+  @Public()
+  @Get('memory/sessions')
+  @ApiOperation({
+    summary: '列出所有活跃会话',
+    description: '通过 Redis SCAN 遍历所有会话 Key，返回会话元信息列表。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '会话列表',
+    type: SessionListResponseDto,
+  })
+  async listSessions(): Promise<SessionListResponseDto> {
+    return this.lcelService.listSessions();
+  }
+
+  @Public()
+  @Get('memory/sessions/:sessionId')
+  @ApiOperation({
+    summary: '获取指定会话的历史消息',
+    description: '返回指定 sessionId 的完整消息列表和元信息。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '会话历史',
+    type: SessionHistoryResponseDto,
+  })
+  async getSessionHistory(
+    @Param('sessionId') sessionId: string,
+  ): Promise<SessionHistoryResponseDto> {
+    return this.lcelService.getSessionHistory(sessionId);
+  }
+
+  @Public()
+  @Delete('memory/sessions/:sessionId')
+  @ApiOperation({
+    summary: '清除指定会话的历史',
+    description: '删除指定 sessionId 的全部对话记录。会话不存在时返回 404。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '会话已清除',
+    type: ClearSessionResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '会话不存在',
+  })
+  async clearSession(
+    @Param('sessionId') sessionId: string,
+  ): Promise<ClearSessionResponseDto> {
+    return this.lcelService.clearSession(sessionId);
   }
 }
