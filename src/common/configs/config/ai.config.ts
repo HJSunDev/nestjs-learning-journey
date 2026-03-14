@@ -86,6 +86,27 @@ export default registerAs('ai', () => ({
     maxTokens: parseInt(process.env.AI_DEFAULT_MAX_TOKENS || '4096', 10),
   },
 
+  // RAG 检索增强生成配置
+  rag: {
+    // Embedding 模型配置（使用 SiliconFlow 的 OpenAI 兼容 API）
+    embedding: {
+      model: process.env.AI_EMBEDDING_MODEL || 'Qwen/Qwen3-Embedding-8B',
+      // Qwen3-Embedding-8B 支持 32~4096 可变维度，默认 4096
+      dimensions: parseInt(process.env.AI_EMBEDDING_DIMENSIONS || '1024', 10),
+    },
+    // 文档切块配置
+    splitter: {
+      chunkSize: parseInt(process.env.AI_RAG_CHUNK_SIZE || '500', 10),
+      chunkOverlap: parseInt(process.env.AI_RAG_CHUNK_OVERLAP || '50', 10),
+    },
+    // 向量检索默认参数
+    retrieval: {
+      defaultTopK: parseInt(process.env.AI_RAG_TOP_K || '4', 10),
+    },
+    // PGVector 向量表名
+    tableName: process.env.AI_RAG_TABLE_NAME || 'langchain_documents',
+  },
+
   // 会话记忆配置
   memory: {
     // 默认会话 TTL (Time To Live，生存时间，单位：秒)

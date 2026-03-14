@@ -13,6 +13,11 @@ import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
 import { ChatHistoryFactory, SessionManagerService } from './memory';
+import {
+  EmbeddingsFactory,
+  VectorStoreService,
+  DocumentProcessor,
+} from './rag';
 
 /**
  * AI 模块
@@ -41,6 +46,12 @@ import { ChatHistoryFactory, SessionManagerService } from './memory';
  * - RedisChatHistory:      自行实现的 BaseChatMessageHistory（复用 ioredis，零新依赖）
  * - WindowedChatHistory:   滑动窗口装饰器（控制模型上下文长度）
  *
+ * 045 新增 RAG 检索增强生成层：
+ * - EmbeddingsFactory:     Embedding 模型工厂（OpenAIEmbeddings + SiliconFlow 兼容）
+ * - VectorStoreService:    向量存储服务（管理 PgVectorStore 生命周期）
+ * - DocumentProcessor:     文档切块处理器（RecursiveCharacterTextSplitter）
+ * - PgVectorStore:          自行实现的 VectorStore（复用 pg，零新集成包依赖）
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -63,6 +74,9 @@ import { ChatHistoryFactory, SessionManagerService } from './memory';
     SchemaRegistry,
     ChatHistoryFactory,
     SessionManagerService,
+    EmbeddingsFactory,
+    VectorStoreService,
+    DocumentProcessor,
   ],
   exports: [
     AiService,
@@ -75,6 +89,9 @@ import { ChatHistoryFactory, SessionManagerService } from './memory';
     SchemaRegistry,
     ChatHistoryFactory,
     SessionManagerService,
+    EmbeddingsFactory,
+    VectorStoreService,
+    DocumentProcessor,
   ],
 })
 export class AiModule {}

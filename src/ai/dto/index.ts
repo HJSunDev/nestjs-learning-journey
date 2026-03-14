@@ -4,3 +4,4 @@ export * from './model-list-response.dto';
 export * from './structured-request.dto';
 export * from './tool-calling.dto';
 export * from './memory-chat.dto';
+export * from './rag.dto';

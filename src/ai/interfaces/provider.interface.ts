@@ -33,6 +33,12 @@ export interface StreamChunk {
   usage?: TokenUsage;
   /** 完成原因（通常在 done 类型的块中返回） */
   finishReason?: string;
+  /** RAG 检索来源文档（随 done 块返回，与 usage 同级的流结束元信息） */
+  sources?: Array<{
+    content: string;
+    score: number;
+    metadata?: Record<string, unknown>;
+  }>;
 }
 
 /**

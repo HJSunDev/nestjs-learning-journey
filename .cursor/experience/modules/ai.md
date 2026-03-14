@@ -152,3 +152,59 @@ import { ChatAlibabaTongyi } from '@langchain/community/chat_models/alibaba_tong
 - OpenAI o1/o3 不适用（推理文本不暴露于 Chat Completions API）
 - Qwen 和 GLM 的推理功能需通过 `modelKwargs` 传入厂商特定参数
 - 若某厂商的 `reasoning_content` 字段位置发生变化，需重新验证
+
+---
+
+### [EXP-004] 避免引入 @langchain/community：peer dependency 冲突与自实现策略
+
+- **日期**: 2026-03-13
+- **关联**: `package.json`, `src/ai/rag/`, `src/ai/memory/redis-chat-history.ts`
+- **标签**: `#langchain` `#community` `#peer-dependency` `#自实现` `#架构决策`
+
+#### 问题现象
+多次尝试安装 `@langchain/community` 均失败，报 `ERESOLVE unable to resolve dependency tree`。即使成功装入 `package.json`，后续任何 `npm install` 也会因冲突而失败。
+
+#### 根因分析
+`@langchain/community` 是 LangChain 的集成聚合包，声明了 100+ 个 peer dependencies。其中 `@browserbasehq/stagehand`（浏览器自动化包）引发多层冲突：
+
+```
+@langchain/community
+  └─ peer: @browserbasehq/stagehand@^1.0.0
+       ├─ peer: dotenv@^16.4.5      ← 与项目 dotenv@^17.x 冲突
+       └─ peer: openai@^4.62.1      ← 与项目 openai@6.x 冲突
+```
+
+尝试过的修复路径均不理想：
+- `.npmrc` + `legacy-peer-deps=true`：关闭**所有**包的 peer dep 校验，过于粗暴
+- `package.json` `overrides`：修复一个冲突（dotenv）后又冒出下一个（openai），打地鼠式修补
+
+核心矛盾：我们只需要该包中的个别子模块（如 `PGVectorStore`），却被迫承担整个聚合包的依赖冲突。
+
+#### 验证方案 ✅
+**不引入 `@langchain/community`，改为自行实现所需组件。** 与 EXP-003 的思路一致——当 `@langchain/community` 中的集成类质量参差不齐或依赖冲突不可控时，基于 `@langchain/core` 的基类自行实现。
+
+已验证的自实现先例：
+- **044 章节 `RedisChatHistory`**：继承 `@langchain/core` 的 `BaseListChatMessageHistory`，复用已有 `ioredis`，零新依赖
+- **045 章节 `PgVectorStore`**：继承 `@langchain/core` 的 `VectorStore`，复用已有 `pg`，零新依赖
+
+自实现的可行性基础：
+- `@langchain/core` 提供了完善的基类（`VectorStore`、`BaseListChatMessageHistory` 等），只需实现 2-3 个抽象方法
+- 项目已有对应的底层驱动（`pg`、`ioredis`），无需额外安装
+- 自实现代码量可控（RedisChatHistory 约 90 行，PgVectorStore 预计 150-200 行）
+
+#### 反模式 ❌
+```bash
+# ❌ 使用 .npmrc legacy-peer-deps=true 强行安装 @langchain/community
+# 关闭全局 peer dep 校验，掩盖所有包的真实冲突，牺牲安全网
+
+# ❌ 使用 overrides 逐个修补 stagehand 的冲突依赖
+# 治标不治本，stagehand 每次更新可能引入新冲突
+
+# ❌ 降级 dotenv/openai 来适配 stagehand
+# 为一个不相关的可选依赖降级核心包，因小失大
+```
+
+#### 适用条件
+- 当 `@langchain/community` 中所需功能可通过 `@langchain/core` 基类 + 已有驱动自行实现时
+- `@langchain/core` 提供对应的抽象基类（`VectorStore`、`BaseListChatMessageHistory` 等）
+- 若未来 LangChain 将集成拆分为独立包（如 Python 生态的 `langchain-postgres`），可考虑迁移至官方独立包

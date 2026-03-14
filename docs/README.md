@@ -110,8 +110,8 @@
   - 重构 ToolRegistry 为 LangChain 原生 StructuredTool，实现 3 个内置工具，构建 Agentic 工具调用循环引擎
 - ✅ **[044. 生产级多轮会话管理 (Memory & Redis)](notes/044-memory-and-redis.md)**
   - 自行实现 RedisChatHistory（零新依赖），RunnableWithMessageHistory 有状态链，WindowedChatHistory 滑动窗口裁剪
-- 🔲 **[045. RAG 检索增强生成 (Retriever & Vector Store)](notes/045-rag-and-vector-store.md)**
-  - 跑通 DocumentLoader → TextSplitter → Embeddings → Retriever 全链路，消除模型的知识盲区
+- ✅ **[045. RAG 检索增强生成 (Retriever & Vector Store)](notes/045-rag-and-vector-store.md)**
+  - 自实现 PgVectorStore（继承 @langchain/core VectorStore），Qwen3-Embedding-8B 向量化，RecursiveCharacterTextSplitter 切块，跑通完整 RAG 链路
 - 🔲 **[046. 生产级可观测性与韧性 (Observability & Resilience)](notes/046-observability-and-resilience.md)**
   - LangChain Callbacks 日志打点、`.withRetry()` 降级策略、核心链路单元测试
 <!-- NEW_AI_CORE_END -->

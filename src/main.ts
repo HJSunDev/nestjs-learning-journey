@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { setupSwagger } from './common/configs/setup-swagger';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { resolve } from 'path';
 
 async function bootstrap() {
@@ -42,7 +43,7 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   // 4. 配置 CORS 跨域策略 (从配置文件读取)
-  const corsConfig = configService.get('cors');
+  const corsOrigins = configService.get<string[]>('cors.origins', []);
   app.enableCors({
     // 白名单校验函数：只允许配置中的域名访问
     origin: (origin, callback) => {
@@ -51,22 +52,22 @@ async function bootstrap() {
         return callback(null, true);
       }
       // 检查是否在白名单中
-      if (corsConfig.origins.includes(origin)) {
+      if (corsOrigins.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error(`Origin ${origin} not allowed by CORS`));
       }
     },
     // 允许的 HTTP 方法
-    methods: corsConfig.methods,
+    methods: configService.get<string[]>('cors.methods'),
     // 允许的请求头 (Authorization 用于 JWT, X-Requested-With 用于 AJAX 识别)
-    allowedHeaders: corsConfig.allowedHeaders,
+    allowedHeaders: configService.get<string[]>('cors.allowedHeaders'),
     // 允许浏览器读取的响应头
-    exposedHeaders: corsConfig.exposedHeaders,
+    exposedHeaders: configService.get<string[]>('cors.exposedHeaders'),
     // 允许携带凭证 (Cookie, Authorization Header)
-    credentials: corsConfig.credentials,
+    credentials: configService.get<boolean>('cors.credentials'),
     // 预检请求 (OPTIONS) 缓存时间：24 小时，减少 preflight 请求次数
-    maxAge: corsConfig.maxAge,
+    maxAge: configService.get<number>('cors.maxAge'),
   });
 
   // 配置静态资源服务 (仅本地存储模式需要)
@@ -75,8 +76,10 @@ async function bootstrap() {
 
   if (storageDriver === 'local') {
     // 获取本地存储配置
-    const localDir = configService.get<string>('storage.local.dir') || 'static/upload';
-    const localPrefix = configService.get<string>('storage.local.prefix') || '/static/upload';
+    const localDir =
+      configService.get<string>('storage.local.dir') || 'static/upload';
+    const localPrefix =
+      configService.get<string>('storage.local.prefix') || '/static/upload';
 
     // 解析为绝对路径
     const uploadDir = resolve(process.cwd(), localDir);
@@ -89,15 +92,22 @@ async function bootstrap() {
   // 注册全局异常过滤器
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // 注册全局序列化拦截器 (ClassSerializerInterceptor)
-  // 这将自动应用 @Exclude(), @Expose() 等装饰器规则，处理敏感信息
-  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+  // 注册全局拦截器（洋葱模型，注册顺序决定执行顺序）
+  // 响应阶段执行顺序：Handler → ClassSerializer（序列化 DTO） → Transform（包装统一结构）
+  app.useGlobalInterceptors(
+    // 将响应数据包装为统一结构，方便前端处理
+    new TransformInterceptor(),
+    // 这将自动应用 @Exclude(), @Expose() 等装饰器规则，处理敏感信息
+    new ClassSerializerInterceptor(app.get(Reflector)),
+  );
 
   // 开启全局参数校验管道
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true, // 自动剔除 DTO 中未定义的属性 (防止恶意字段注入)
-    transform: true, // 自动转换参数类型 (如将 ID 字符串转为数字)
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, // 自动剔除 DTO 中未定义的属性 (防止恶意字段注入)
+      transform: true, // 自动转换参数类型 (如将 ID 字符串转为数字)
+    }),
+  );
 
   // 集成 Swagger 文档
   setupSwagger(app);
@@ -105,4 +115,4 @@ async function bootstrap() {
   const port = configService.get<number>('app.port') ?? 3000;
   await app.listen(port);
 }
-bootstrap();
+void bootstrap();

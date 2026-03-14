@@ -8,6 +8,7 @@ import {
   createChatPrompt,
   createQuickChatPrompt,
   createMemoryChatPrompt,
+  createRagPrompt,
   hasSystemMessage,
 } from '../prompts';
 import type { Message } from '../interfaces';
@@ -63,6 +64,8 @@ export interface PreparedMemoryChain {
  *        完整的工具调用循环（多轮迭代）由 ToolCallingLoop 负责
  * - 044: 通过 createMemoryChatPrompt 构建带 history 占位符的链，
  *        由 RunnableWithMessageHistory 在运行时注入 Redis 历史
+ * - 045: 通过 createRagPrompt 构建 RAG 链，{context} 由 Service 层
+ *        从向量检索结果拼接后注入
  * - 046: 通过 .withRetry() 追加重试 → chain.withRetry({ stopAfterAttempt: 3 })
  */
 @Injectable()
@@ -246,6 +249,36 @@ export class ChatChainBuilder {
     return {
       chain: prompt.pipe(modelWithTools),
       input: { messages: convertToLangChainMessages(messages) },
+    };
+  }
+
+  /**
+   * 构建 RAG 检索增强生成 LCEL 管道
+   *
+   * 管道结构：ChatPromptTemplate([System(RAG指令 + {context})], '{question}') → Model
+   *
+   * 与其他 build 方法的核心差异：
+   * - 使用 RAG 专用提示词，包含 {context} 占位符接收检索到的文档内容
+   * - {question} 接收用户的查询文本
+   * - context 由 Service 层从向量检索结果序列化后注入，而非由模板自动生成
+   *
+   * @param model         由 AiModelFactory 创建的 LangChain 模型实例
+   * @param question      用户查询文本
+   * @param context       检索到的文档内容（已序列化为文本）
+   * @param systemPrompt  可选的额外系统指令（追加到 RAG 指令之后）
+   * @returns PreparedChain，chain.invoke(input) 返回 AIMessage
+   */
+  buildRagChain(
+    model: BaseChatModel,
+    question: string,
+    context: string,
+    systemPrompt?: string,
+  ): PreparedChain {
+    const prompt = createRagPrompt(systemPrompt);
+
+    return {
+      chain: prompt.pipe(model),
+      input: { context, question },
     };
   }
 }

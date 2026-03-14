@@ -10,6 +10,7 @@ import { ToolRegistry, type ToolListItem } from './tools/tool.registry';
 import { ToolCallingLoop } from './tools/tool-calling.loop';
 import { ChatHistoryFactory } from './memory';
 import { SessionManagerService } from './memory';
+import { VectorStoreService, DocumentProcessor } from './rag';
 import { AiProvider, ReasoningMode, StreamChunkType } from './constants';
 import { MODEL_REGISTRY } from './constants/model-registry';
 import {
@@ -27,6 +28,15 @@ import {
   SessionHistoryResponseDto,
   SessionListResponseDto,
   ClearSessionResponseDto,
+  IngestDocumentsRequestDto,
+  IngestDocumentsResponseDto,
+  RagChatRequestDto,
+  RagChatResponseDto,
+  RetrievedSourceDto,
+  SimilaritySearchRequestDto,
+  SimilaritySearchResponseDto,
+  CollectionListResponseDto,
+  DeleteCollectionResponseDto,
 } from './dto';
 import { Observable, Subject } from 'rxjs';
 import { StreamChunk } from './interfaces';
@@ -52,6 +62,11 @@ import { StreamChunk } from './interfaces';
  * - 新增 memoryChat / streamMemoryChat 方法
  * - 通过 RunnableWithMessageHistory + Redis 实现有状态多轮会话
  * - 新增 getSessionHistory / listSessions / clearSession 会话管理方法
+ *
+ * 045 章节扩展：
+ * - 新增 ingestDocuments / ragChat / streamRagChat / similaritySearch 方法
+ * - 通过 PgVectorStore + OpenAIEmbeddings 实现检索增强生成
+ * - 新增 listCollections / deleteCollection 集合管理方法
  */
 @Injectable()
 export class LcelService {
@@ -66,6 +81,8 @@ export class LcelService {
     private readonly toolCallingLoop: ToolCallingLoop,
     private readonly chatHistoryFactory: ChatHistoryFactory,
     private readonly sessionManager: SessionManagerService,
+    private readonly vectorStoreService: VectorStoreService,
+    private readonly documentProcessor: DocumentProcessor,
   ) {}
 
   /**
@@ -677,6 +694,268 @@ export class LcelService {
     };
   }
 
+  // ============================================================
+  // 045 RAG 检索增强生成
+  // ============================================================
+
+  /**
+   * 文档摄入：切块 → 向量化 → 存入 PGVector
+   *
+   * @param dto 摄入请求参数
+   * @returns 摄入结果（文档块 ID 列表和统计信息）
+   */
+  async ingestDocuments(
+    dto: IngestDocumentsRequestDto,
+  ): Promise<IngestDocumentsResponseDto> {
+    this.logger.log(
+      `[RAG] 文档摄入，集合: ${dto.collection || 'default'}, 文档数: ${dto.documents.length}`,
+    );
+
+    const docs = await this.documentProcessor.splitMany(
+      dto.documents.map((d) => ({ text: d.text, metadata: d.metadata })),
+      { chunkSize: dto.chunkSize, chunkOverlap: dto.chunkOverlap },
+    );
+
+    const store = this.vectorStoreService.getStore();
+    const collection = dto.collection || 'default';
+    const ids = await store.addDocuments(docs, { collection });
+
+    return {
+      documentIds: ids,
+      chunkCount: docs.length,
+      collection,
+      message: `成功摄入 ${dto.documents.length} 篇文档，生成 ${docs.length} 个文档块`,
+    };
+  }
+
+  /**
+   * RAG 对话：检索 → 拼接上下文 → LLM 生成
+   *
+   * 完整链路：
+   * 1. 将用户问题向量化
+   * 2. 从 PGVector 中检索 topK 个最相关的文档块
+   * 3. 将文档块内容拼接为上下文，注入 RAG 提示词
+   * 4. LLM 基于上下文生成回答
+   *
+   * @param dto RAG 对话请求
+   * @returns 包含回答内容和来源文档的响应
+   */
+  async ragChat(dto: RagChatRequestDto): Promise<RagChatResponseDto> {
+    this.logger.log(
+      `[RAG] 对话，集合: ${dto.collection || 'default'}, ` +
+        `提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const { sources, context } = await this.retrieveContext(
+      dto.question,
+      dto.topK,
+      dto.collection,
+    );
+
+    const modelKwargs = this.resolveModelKwargs(
+      dto.provider,
+      dto.model,
+      dto.enableReasoning,
+    );
+
+    const model = this.modelFactory.createChatModel(dto.provider, {
+      model: dto.model,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      modelKwargs,
+    });
+
+    const { chain, input } = this.chainBuilder.buildRagChain(
+      model,
+      dto.question,
+      context,
+      dto.systemPrompt,
+    );
+
+    const result = (await chain.invoke(input)) as AIMessageChunk;
+
+    const normalized = this.reasoningNormalizer.normalize(
+      dto.provider,
+      result as unknown as Record<string, unknown>,
+    );
+
+    return {
+      content: normalized.content || '',
+      sources,
+      reasoning: normalized.reasoning || undefined,
+      usage: this.extractTokenUsage(result),
+      finishReason: this.extractFinishReason(result),
+    };
+  }
+
+  /**
+   * 流式 RAG 对话
+   *
+   * 与 ragChat 相同的检索链路，区别在于 LLM 生成阶段使用 stream()。
+   * 检索阶段仍然是同步完成的（需要先获取完整上下文才能开始生成）。
+   *
+   * @param dto RAG 对话请求
+   * @returns StreamChunk 的 Observable 流
+   */
+  streamRagChat(dto: RagChatRequestDto): Observable<StreamChunk> {
+    const subject = new Subject<StreamChunk>();
+
+    void (async () => {
+      try {
+        const { sources, context } = await this.retrieveContext(
+          dto.question,
+          dto.topK,
+          dto.collection,
+        );
+
+        const modelKwargs = this.resolveModelKwargs(
+          dto.provider,
+          dto.model,
+          dto.enableReasoning,
+        );
+
+        const model = this.modelFactory.createChatModel(dto.provider, {
+          model: dto.model,
+          streaming: true,
+          maxTokens: dto.maxTokens,
+          modelKwargs,
+        });
+
+        const { chain, input } = this.chainBuilder.buildRagChain(
+          model,
+          dto.question,
+          context,
+          dto.systemPrompt,
+        );
+
+        await this.executeStream(
+          chain,
+          dto.provider,
+          input,
+          subject,
+          undefined,
+          { sources },
+        );
+      } catch (error) {
+        this.logger.error('[RAG] 流式对话发生错误', error);
+        subject.next({
+          type: StreamChunkType.ERROR,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        subject.complete();
+      }
+    })();
+
+    return subject.asObservable();
+  }
+
+  /**
+   * 相似度搜索（直接检索，不经过 LLM）
+   *
+   * 用于调试检索质量、浏览知识库内容。
+   */
+  async similaritySearch(
+    dto: SimilaritySearchRequestDto,
+  ): Promise<SimilaritySearchResponseDto> {
+    this.logger.log(
+      `[RAG] 相似度搜索，查询: "${dto.query}", topK: ${dto.topK || 4}`,
+    );
+
+    const store = this.vectorStoreService.getStore();
+    const results = await store.similaritySearchWithScore(
+      dto.query,
+      dto.topK || 4,
+      dto.collection ? { collection: dto.collection } : undefined,
+    );
+
+    return {
+      results: results.map(([doc, score]) => ({
+        content: doc.pageContent,
+        score,
+        metadata: doc.metadata,
+      })),
+      total: results.length,
+    };
+  }
+
+  /**
+   * 列出所有知识库集合
+   */
+  async listCollections(): Promise<CollectionListResponseDto> {
+    const store = this.vectorStoreService.getStore();
+    const collections = await store.listCollections();
+    return { collections, total: collections.length };
+  }
+
+  /**
+   * 删除指定集合的所有文档
+   */
+  async deleteCollection(
+    collection: string,
+  ): Promise<DeleteCollectionResponseDto> {
+    const store = this.vectorStoreService.getStore();
+    const deletedDocumentCount = await store.getDocumentCount(collection);
+    await store.delete({ collection });
+    return {
+      collection,
+      deletedDocumentCount,
+      message: `集合 ${collection} 已清除，共删除 ${deletedDocumentCount} 个文档块`,
+    };
+  }
+
+  /**
+   * 从向量数据库检索相关文档并序列化为上下文文本
+   *
+   * 返回结构：
+   * @property sources - 结构化的来源信息数组，用于 API 响应
+   *   { content: string, score: number, metadata: Record<string, unknown> }
+   * @property context - 序列化的上下文文本，用于注入 LLM prompt
+   *   格式："[来源 1] (文件名)\n文档内容\n\n[来源 2] (文件名)\n文档内容"
+   *
+   * @example 返回值示例
+   * {
+   *   sources: [
+   *     { content: "依赖注入是 NestJS 的核心特性...", score: 0.15, metadata: { source: "di.md" } },
+   *     { content: "模块用于组织应用程序结构...", score: 0.23, metadata: { source: "module.md" } }
+   *   ],
+   *   context: "[来源 1] (di.md)\n依赖注入是 NestJS 的核心特性...\n\n[来源 2] (module.md)\n模块用于组织应用程序结构..."
+   * }
+   */
+  private async retrieveContext(
+    question: string,
+    topK?: number,
+    collection?: string,
+  ): Promise<{ sources: RetrievedSourceDto[]; context: string }> {
+    const store = this.vectorStoreService.getStore();
+    const k = topK || 4;
+
+    // 使用 similaritySearchWithScore 方法进行相似度搜索，返回结果为数组，单个数组元素为 [doc, score]
+    const results = await store.similaritySearchWithScore(
+      question,
+      k,
+      collection ? { collection } : undefined,
+    );
+
+    // 获取引用来源信息列表，将results转换为RetrievedSourceDto数组
+    const sources: RetrievedSourceDto[] = results.map(([doc, score]) => ({
+      content: doc.pageContent,
+      score,
+      metadata: doc.metadata,
+    }));
+
+    // 获取字符串类型的上下文文本，将结果转换为上下文文本，会注入到 LLM prompt 中
+    const context = results
+      .map(
+        ([doc], i) =>
+          `[来源 ${i + 1}]${doc.metadata?.source ? ` (${doc.metadata.source})` : ''}\n${doc.pageContent}`,
+      )
+      .join('\n\n');
+
+    this.logger.debug(`[RAG] 检索完成，命中 ${results.length} 个文档块`);
+
+    return { sources, context };
+  }
+
   /**
    * 构建被 RunnableWithMessageHistory 包装的链
    *
@@ -732,6 +1011,7 @@ export class LcelService {
    *
    * 接收泛化的 Runnable（而非 BaseChatModel），使其可与任意 LCEL 管道配合。
    * 044 扩展：新增可选 config 参数，供 RunnableWithMessageHistory 传入 sessionId。
+   * 045 扩展：新增可选 doneExtras 参数，作为流结束时元数据（如 RAG sources）的通用注入机制。
    */
   private async executeStream(
     chain: Runnable,
@@ -739,6 +1019,8 @@ export class LcelService {
     chainInput: Record<string, unknown>,
     subject: Subject<StreamChunk>,
     config?: Record<string, unknown>,
+    // 随 DONE 块下发的附加元数据（如 sources、usage 等），提供通用的流结束信息注入能力
+    doneExtras?: Partial<Omit<StreamChunk, 'type'>>,
   ) {
     try {
       const stream = await chain.stream(chainInput, config);
@@ -779,6 +1061,7 @@ export class LcelService {
         type: StreamChunkType.DONE,
         usage,
         finishReason,
+        ...doneExtras,
       });
       subject.complete();
     } catch (error) {

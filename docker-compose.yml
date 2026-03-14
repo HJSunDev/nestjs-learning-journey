@@ -100,8 +100,9 @@ services:
 
   # === PostgreSQL 服务 ===
   postgres:
-    # 镜像：使用官方 PostgreSQL 16 镜像（当前最新稳定版）
-    image: postgres:16
+    # 镜像：使用 pgvector 官方镜像（基于 PostgreSQL 16，内置 vector 扩展）
+    # RAG 功能依赖 pgvector 扩展来存储和检索文档向量
+    image: pgvector/pgvector:pg16
     
     # 容器名称：带上项目前缀，避免与其他项目冲突 给运行起来的进程起个名，方便查找
     container_name: nest-journey-postgres

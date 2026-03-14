@@ -36,6 +36,14 @@ import {
   SessionHistoryResponseDto,
   SessionListResponseDto,
   ClearSessionResponseDto,
+  IngestDocumentsRequestDto,
+  IngestDocumentsResponseDto,
+  RagChatRequestDto,
+  RagChatResponseDto,
+  SimilaritySearchRequestDto,
+  SimilaritySearchResponseDto,
+  CollectionListResponseDto,
+  DeleteCollectionResponseDto,
 } from './dto';
 import { AiExceptionFilter } from './filters/ai-exception.filter';
 import { Public } from 'src/common/decorators/public.decorator';
@@ -50,6 +58,7 @@ import { AiStreamAdapter } from './adapters/stream.adapter';
  * 042 章节扩展：新增 /structured/* 端点，支持通过 withStructuredOutput 获取强类型 JSON 输出。
  * 043 章节扩展：新增 /tool-calling/* 端点，支持 Agentic 工具调用循环。
  * 044 章节扩展：新增 /memory/* 端点，支持基于 Redis 的有状态多轮会话管理。
+ * 045 章节扩展：新增 /rag/* 端点，支持 RAG 检索增强生成（文档摄入、对话、搜索、集合管理）。
  */
 @ApiTags('AI 服务 (LCEL 管道版)')
 @ApiBearerAuth()
@@ -385,5 +394,121 @@ export class LcelController {
     @Param('sessionId') sessionId: string,
   ): Promise<ClearSessionResponseDto> {
     return this.lcelService.clearSession(sessionId);
+  }
+
+  // ============================================================
+  // 045 RAG 检索增强生成端点
+  // ============================================================
+
+  @Public()
+  @Post('rag/ingest')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '文档摄入',
+    description:
+      '将文本文档切块、向量化后存入 PGVector 向量数据库。' +
+      '支持通过 collection 参数隔离不同知识库。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '摄入成功',
+    type: IngestDocumentsResponseDto,
+  })
+  async ingestDocuments(
+    @Body() dto: IngestDocumentsRequestDto,
+  ): Promise<IngestDocumentsResponseDto> {
+    return this.lcelService.ingestDocuments(dto);
+  }
+
+  @Public()
+  @Post('rag/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'RAG 对话',
+    description:
+      '基于向量检索的增强生成对话。先从知识库检索相关文档，' +
+      '再将文档内容作为上下文注入 LLM 生成回答。返回回答和来源文档。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '对话成功',
+    type: RagChatResponseDto,
+  })
+  async ragChat(@Body() dto: RagChatRequestDto): Promise<RagChatResponseDto> {
+    return this.lcelService.ragChat(dto);
+  }
+
+  @Public()
+  @Post('rag/chat/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '流式 RAG 对话',
+    description:
+      '与非流式版本相同的检索链路，LLM 生成阶段通过 SSE 逐 chunk 输出。',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiResponse({
+    status: 200,
+    description: 'SSE 流式响应',
+  })
+  streamRagChat(@Body() dto: RagChatRequestDto, @Res() res: Response): void {
+    const stream$ = this.lcelService.streamRagChat(dto);
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: 'LCEL-RAG对话',
+      provider: dto.provider,
+      model: dto.model,
+    });
+  }
+
+  @Public()
+  @Post('rag/search')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '相似度搜索',
+    description:
+      '直接对向量数据库进行相似度检索，不经过 LLM 生成。' +
+      '用于调试检索质量、浏览知识库内容。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '搜索结果',
+    type: SimilaritySearchResponseDto,
+  })
+  async similaritySearch(
+    @Body() dto: SimilaritySearchRequestDto,
+  ): Promise<SimilaritySearchResponseDto> {
+    return this.lcelService.similaritySearch(dto);
+  }
+
+  @Public()
+  @Get('rag/collections')
+  @ApiOperation({
+    summary: '列出所有知识库集合',
+    description: '返回所有集合及其文档数量。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '集合列表',
+    type: CollectionListResponseDto,
+  })
+  async listCollections(): Promise<CollectionListResponseDto> {
+    return this.lcelService.listCollections();
+  }
+
+  @Public()
+  @Delete('rag/collections/:collection')
+  @ApiOperation({
+    summary: '删除指定集合',
+    description: '删除指定集合的所有文档和向量数据。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '集合已删除',
+    type: DeleteCollectionResponseDto,
+  })
+  async deleteCollection(
+    @Param('collection') collection: string,
+  ): Promise<DeleteCollectionResponseDto> {
+    return this.lcelService.deleteCollection(collection);
   }
 }
