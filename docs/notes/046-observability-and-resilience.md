@@ -93,6 +93,57 @@ const fullResilient = primaryWithRetry.withFallbacks({
 });
 ```
 
+### 场景 E: 单次 LLM 调用超时（Per-Call Timeout）
+
+每次 LLM HTTP 请求都有独立的超时限制，防止单次调用无限挂起：
+
+```typescript
+// AiModelFactory 在创建模型时自动注入 perCallMs（默认 60s）
+const model = this.modelFactory.createChatModel('deepseek', {
+  model: 'deepseek-chat',
+  timeout: 30000, // 可覆盖默认值，设置 30s
+});
+
+// 底层透传给 ChatDeepSeek 构造函数，作用于 Axios HTTP 层
+// 若 60s 内未收到响应，Axios 抛出 ECONNABORTED 错误
+```
+
+`timeout` 在整个链路中的传递路径：
+
+```
+CreateModelOptions.timeout
+  → AiModelFactory（缺省时读取 ai.timeout.perCallMs 配置）
+    → AdapterModelParams.timeout
+      → OpenAICompatibleAdapter
+        → ChatDeepSeek({ timeout })
+          → Axios({ timeout })  ← 实际生效的 HTTP 超时
+```
+
+### 场景 F: 工具调用循环聚合超时（Loop-Level Timeout）
+
+对多轮工具调用的总耗时设置上限，防止 HTTP 请求被无限占用：
+
+```typescript
+// ToolCallingLoop 通过 AbortController 控制整个循环的生命周期
+const result = await this.toolCallingLoop.execute({
+  model,
+  messages,
+  toolNames: ['get_weather', 'search_web'],
+  maxIterations: 5,
+  timeoutMs: 120000, // 120s 总超时（可选，缺省使用 ai.timeout.toolCallingLoopMs）
+});
+
+// 超时触发时：
+// 1. AbortController.abort() 中止当前正在执行的 model.invoke()
+// 2. 抛出包含调试上下文的错误：
+//    "工具调用循环超时: 已执行 120050ms (限制 120000ms), 完成 3 轮工具调用后中止"
+// 3. AiExceptionFilter 捕获后映射为 504 Gateway Timeout
+```
+
+**与 maxIterations 的关系**：`maxIterations` 限制轮次数（防止逻辑死循环），`timeoutMs` 限制挂钟时间（防止慢响应耗尽资源）。两者独立生效，互为补充。
+
+**适用边界**：`toolCallingLoopMs` 仅保护 ToolCallingLoop 这种同步 HTTP 请求内的工具调用循环。未来 LangGraph 的异步长时运行智能体有独立的任务级 TTL 和步骤超时机制，不受此参数影响。
+
 ## 3. 深度原理与机制 (Under the Hood)
 
 ### 3.1 LangChain Callbacks 传播机制
@@ -218,6 +269,84 @@ interface TraceSummary {
 }
 ```
 
+### 3.6 超时控制双层架构
+
+超时保护分两层独立运作，覆盖不同粒度的风险：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   超时控制双层架构                               │
+│                                                                 │
+│  Layer 1: Per-Call Timeout (单次 HTTP 请求超时)                  │
+│  ─────────────────────────────────────────────                  │
+│  注入点: AiModelFactory.createChatModel()                        │
+│  生效位置: ChatDeepSeek → Axios HTTP Client                      │
+│  作用: 单次 LLM API 请求超过 perCallMs 即中止                     │
+│  配置: ai.timeout.perCallMs (默认 60s)                           │
+│                                                                 │
+│  Layer 2: Loop-Level Timeout (循环聚合超时)                      │
+│  ──────────────────────────────────────────                     │
+│  注入点: ToolCallingLoop.execute() / streamExecute()             │
+│  生效位置: AbortController.signal → 传递给每次 invoke/stream      │
+│  作用: 多轮工具调用的总挂钟时间超过 toolCallingLoopMs 即中止整个循环 │
+│  配置: ai.timeout.toolCallingLoopMs (默认 300s, 0=不限制)         │
+│                                                                 │
+│  错误收敛: AiExceptionFilter                                     │
+│  ─────────────────────────                                      │
+│  AbortError / ECONNABORTED / ETIMEDOUT / 含"超时"的消息          │
+│  → 统一映射为 504 Gateway Timeout                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 两层的独立性与互补性
+
+| 风险场景 | Layer 1 (perCallMs) | Layer 2 (toolCallingLoopMs) |
+| --- | --- | --- |
+| 单次 LLM 推理卡住不返回 | ✅ 直接中止 | 间接生效（循环也会终止） |
+| 单次调用正常，但 5 轮循环总耗时过长 | ❌ 无法感知 | ✅ 超过总时限时中止 |
+| 工具执行本身耗时过长 | ❌ 不覆盖工具执行 | ✅ 整体超时兜底 |
+
+#### AbortController 信号传递路径
+
+```typescript
+// ToolCallingLoop.createTimeoutGuard()
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), resolvedTimeout);
+
+// signal 传递给每次 LLM 调用
+await modelWithTools.invoke(currentMessages, { signal: controller.signal });
+
+// 超时触发时:
+// 1. controller.abort() 设置 signal.aborted = true
+// 2. LangChain 的 invoke/stream 检测到 aborted signal，抛出 AbortError
+// 3. handleLoopError() 捕获 AbortError，包装为带上下文的业务错误
+// 4. AiExceptionFilter 检测到超时错误，返回 504
+```
+
+#### 配置与环境变量映射
+
+```typescript
+// ai.config.ts
+timeout: {
+  perCallMs: parseInt(process.env.AI_TIMEOUT_PER_CALL || '60000', 10),
+  toolCallingLoopMs: parseInt(process.env.AI_TIMEOUT_TOOL_CALLING_LOOP || '300000', 10),
+}
+
+// .env 可选覆盖
+// AI_TIMEOUT_PER_CALL=60000           # 单次调用 60s
+// AI_TIMEOUT_TOOL_CALLING_LOOP=300000 # 循环总计 300s, 设为 0 不限制
+```
+
+#### 与未来 LangGraph 智能体的边界
+
+`toolCallingLoopMs` 的命名和作用域被刻意限定为 ToolCallingLoop——即同步 HTTP 请求内的工具调用循环。未来 LangGraph 的异步长时运行智能体（可能持续数分钟甚至数小时）有独立的超时机制：
+
+| 超时类型 | ToolCallingLoop | LangGraph Agent (未来) |
+| --- | --- | --- |
+| 执行模式 | 同步（HTTP 请求内） | 异步（后台任务） |
+| 超时控制 | `toolCallingLoopMs` | 任务级 TTL + 步骤超时 |
+| 配置位置 | `ai.timeout.toolCallingLoopMs` | 独立的 agent 配置 |
+
 ## 4. 最佳实践与坑 (Best Practices & Pitfalls)
 
 - ✅ **per-request 创建 Tracer**：每次请求 `new LangChainTracer()`，避免跨请求状态污染
@@ -226,10 +355,14 @@ interface TraceSummary {
 - ✅ **降级模型创建的容错处理**：API Key 未配置等错误应被静默跳过，不影响主链
 - ✅ **追踪日志使用 `debug` 级别**：避免生产环境日志爆炸，摘要使用 `log` 级别
 - ✅ **Map 是计算缓冲区，不是存储层**：持久化由 Winston 日志承担，追踪层不引入额外 I/O
+- ✅ **perCallMs 由工厂统一注入**：调用方无需关心超时配置，工厂读取 `ai.timeout.perCallMs` 作为默认值
+- ✅ **toolCallingLoopMs 设为 0 可禁用**：当 `maxIterations` + `perCallMs` 已经提供足够保护时，可关闭聚合超时
+- ✅ **超时守卫 cleanup 在 finally 中调用**：确保 `clearTimeout` 执行，防止定时器泄漏
 - ❌ **避免全局单例 Tracer**：会导致不同请求的 Span 混在一起
 - ❌ **避免过多重试**：LLM 调用成本高，3 次（1+2 重试）通常足够
 - ❌ **避免在流式中依赖 fallback 的完整性**：流开始后的错误不触发降级
 - ❌ **避免降级链与主链使用相同的 API Key**：可能遭遇相同的限流策略
+- ❌ **避免将 toolCallingLoopMs 用于长时运行智能体**：该参数仅适用于同步 HTTP 请求内的循环，异步智能体应有独立的超时策略
 
 ## 5. 行动导向 (Action Guide)
 
@@ -434,5 +567,207 @@ export class AiModule {}
     "llmTotalLatencyMs": 1200,
     "totalTokens": 168
   }
+}
+```
+
+### Step 6: 超时配置 (`ai.config.ts`)
+
+**这一步在干什么**：在 AI 配置中心新增超时配置段，为双层超时提供统一的默认值和环境变量覆盖入口。
+
+```typescript
+// src/common/configs/config/ai.config.ts
+export default registerAs('ai', () => ({
+  // ...其他配置...
+
+  timeout: {
+    // 单次 LLM API 调用的 HTTP 超时（毫秒），作用于 Axios 请求层
+    perCallMs: parseInt(process.env.AI_TIMEOUT_PER_CALL || '60000', 10),
+    // 同步工具调用循环的总超时（毫秒），保护 HTTP 请求不被无限占用。
+    // 仅作用于 ToolCallingLoop（同步 HTTP 请求内的工具调用循环），
+    // 不适用于未来 LangGraph 的异步长时运行智能体。
+    // 设为 0 表示不限制（依赖 perCallMs + maxIterations 提供保护）。
+    toolCallingLoopMs: parseInt(
+      process.env.AI_TIMEOUT_TOOL_CALLING_LOOP || '300000', 10,
+    ),
+  },
+}));
+```
+
+对应的环境变量（`.env` 可选覆盖）：
+
+```bash
+# AI_TIMEOUT_PER_CALL=60000           # 单次 LLM 调用超时（毫秒），默认 60s
+# AI_TIMEOUT_TOOL_CALLING_LOOP=300000 # 同步工具调用循环总超时（毫秒），默认 300s，设为 0 不限制
+```
+
+### Step 7: Per-Call 超时注入 (工厂层 + 适配器层)
+
+**这一步在干什么**：在模型创建链路中透传 `timeout` 参数，使每次 LLM HTTP 请求都受超时保护。修改涉及三个文件，遵循 Factory → Interface → Adapter 的分层传递。
+
+#### 7.1 适配器接口 (`provider-adapter.interface.ts`)
+
+```typescript
+export interface AdapterModelParams {
+  apiKey: string;
+  model: string;
+  baseUrl?: string;
+  temperature?: number;
+  streaming?: boolean;
+  maxTokens?: number;
+  modelKwargs?: Record<string, unknown>;
+  /** 单次 HTTP 请求超时（毫秒），传递给底层 HTTP 客户端（如 Axios） */
+  timeout?: number;
+}
+```
+
+#### 7.2 工厂层 (`model.factory.ts`)
+
+```typescript
+export interface CreateModelOptions {
+  model?: string;
+  temperature?: number;
+  streaming?: boolean;
+  maxTokens?: number;
+  modelKwargs?: Record<string, unknown>;
+  /** 单次 HTTP 请求超时（毫秒），未指定时使用 ai.timeout.perCallMs 全局默认值 */
+  timeout?: number;
+}
+
+// createChatModel 内部：
+const timeout =
+  options.timeout ?? this.configService.get<number>('ai.timeout.perCallMs');
+
+return entry.adapter.createModel({
+  apiKey, model, baseUrl,
+  temperature: options.temperature,
+  streaming: options.streaming,
+  maxTokens: options.maxTokens,
+  modelKwargs: options.modelKwargs,
+  timeout, // 透传给 Adapter
+});
+```
+
+#### 7.3 适配器实现 (`openai-compatible.adapter.ts`)
+
+```typescript
+export class OpenAICompatibleAdapter implements IProviderAdapter {
+  createModel(params: AdapterModelParams): BaseChatModel {
+    return new ChatDeepSeek({
+      apiKey: params.apiKey,
+      model: params.model,
+      temperature: params.temperature,
+      streaming: params.streaming,
+      maxTokens: params.maxTokens,
+      // ChatDeepSeek 的 timeout 类型继承自 OpenAI SDK 的 ClientOptions，
+      // 其内部类型解析为 error 类型，属于第三方类型缺陷，需 eslint-disable
+      ...(params.timeout != null ? { timeout: params.timeout } : {}),
+      ...(params.modelKwargs ? { modelKwargs: params.modelKwargs } : {}),
+      ...(params.baseUrl ? { configuration: { baseURL: params.baseUrl } } : {}),
+    });
+  }
+}
+```
+
+### Step 8: Loop-Level 超时 + 异常过滤 (ToolCallingLoop + AiExceptionFilter)
+
+**这一步在干什么**：在 ToolCallingLoop 中通过 AbortController 实现聚合超时，在 AiExceptionFilter 中统一捕获超时异常并映射为 504。
+
+#### 8.1 ToolCallingLoop 超时守卫
+
+`execute()` 和 `streamExecute()` 新增 `timeoutMs` 参数，内部通过 `createTimeoutGuard` 创建 AbortController：
+
+```typescript
+// ToolCallingLoop 核心超时逻辑
+
+// 超时守卫工厂
+private createTimeoutGuard(timeoutMs?: number): {
+  signal: AbortSignal | undefined;
+  cleanup: () => void;
+} {
+  const resolvedTimeout =
+    timeoutMs ?? this.configService.get<number>('ai.timeout.toolCallingLoopMs');
+
+  if (!resolvedTimeout || resolvedTimeout <= 0) {
+    return { signal: undefined, cleanup: () => {} };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), resolvedTimeout);
+
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timer),
+  };
+}
+
+// execute/streamExecute 中的使用模式
+async execute(params: { ...; timeoutMs?: number }) {
+  const { signal, cleanup } = this.createTimeoutGuard(params.timeoutMs);
+  try {
+    for (let i = 0; i < maxIterations; i++) {
+      // signal 传递给每次 LLM 调用
+      const response = await modelWithTools.invoke(messages, { signal });
+      // ...
+    }
+  } catch (error) {
+    throw this.handleLoopError(error, startTime, rounds.length, params.timeoutMs);
+  } finally {
+    cleanup(); // 确保定时器被清理
+  }
+}
+
+// 统一的错误包装
+private handleLoopError(
+  error: unknown,
+  startTime: number,
+  completedRounds: number,
+  timeoutMs?: number,
+): Error {
+  if (error instanceof Error && error.name === 'AbortError') {
+    const elapsed = Date.now() - startTime;
+    const limit =
+      timeoutMs ??
+      this.configService.get<number>('ai.timeout.toolCallingLoopMs') ?? 0;
+    return new Error(
+      `工具调用循环超时: 已执行 ${elapsed}ms (限制 ${limit}ms), ` +
+        `完成 ${completedRounds} 轮工具调用后中止`,
+    );
+  }
+  return error instanceof Error ? error : new Error(String(error));
+}
+```
+
+#### 8.2 AiExceptionFilter 超时检测
+
+在异常过滤器中新增超时错误的优先检测，先于通用 LangChain 错误处理：
+
+```typescript
+// ai-exception.filter.ts
+
+// catch() 方法中，HttpException 处理之后、通用错误处理之前
+if (this.isTimeoutError(exception)) {
+  const message = this.extractMessage(exception);
+  response.status(HttpStatus.GATEWAY_TIMEOUT).json({
+    statusCode: HttpStatus.GATEWAY_TIMEOUT,
+    timestamp: new Date().toISOString(),
+    path: request.url,
+    error: 'ai_timeout',
+    message,
+  });
+  return;
+}
+
+// 超时判定：覆盖三种来源
+private isTimeoutError(exception: unknown): boolean {
+  if (!(exception instanceof Error)) return false;
+  if (exception.name === 'AbortError') return true;
+
+  const msg = exception.message.toLowerCase();
+  if (msg.includes('timeout') || msg.includes('超时')) return true;
+
+  const code = (exception as unknown as Record<string, unknown>).code;
+  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') return true;
+
+  return false;
 }
 ```

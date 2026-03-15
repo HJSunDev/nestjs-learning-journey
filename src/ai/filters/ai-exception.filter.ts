@@ -73,6 +73,23 @@ export class AiExceptionFilter implements ExceptionFilter {
       return;
     }
 
+    // 超时类错误优先检测，映射为 504 Gateway Timeout
+    if (this.isTimeoutError(exception)) {
+      const message = this.extractMessage(exception);
+      this.logger.error(
+        `AI 调用超时 [${request.method} ${request.url}]: ${message}`,
+      );
+
+      response.status(HttpStatus.GATEWAY_TIMEOUT).json({
+        statusCode: HttpStatus.GATEWAY_TIMEOUT,
+        timestamp: new Date().toISOString(),
+        path: request.url,
+        error: 'ai_timeout',
+        message,
+      });
+      return;
+    }
+
     // LangChain 等非标准异常走自定义提取逻辑
     const { status, message, type } = this.extractErrorInfo(exception);
     const httpStatus = UPSTREAM_STATUS_MAP[status] ?? HttpStatus.BAD_GATEWAY;
@@ -125,5 +142,37 @@ export class AiExceptionFilter implements ExceptionFilter {
       message: String(exception),
       type: '',
     };
+  }
+
+  /**
+   * 判断异常是否为超时类错误
+   *
+   * 超时错误有三种来源，需逐一检测：
+   * - AbortController.abort() → name === 'AbortError'
+   * - Axios HTTP 超时 → code === 'ECONNABORTED' 或 message 含 'timeout'
+   * - ToolCallingLoop 包装后的错误 → message 含 '超时'
+   */
+  private isTimeoutError(exception: unknown): boolean {
+    if (!(exception instanceof Error)) return false;
+
+    if (exception.name === 'AbortError') return true;
+
+    const msg = exception.message.toLowerCase();
+    if (msg.includes('timeout') || msg.includes('超时')) return true;
+
+    const code = (exception as unknown as Record<string, unknown>).code;
+    if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') return true;
+
+    return false;
+  }
+
+  /**
+   * 从异常中提取消息文本
+   */
+  private extractMessage(exception: unknown): string {
+    if (exception instanceof Error) return exception.message;
+    return typeof exception === 'string'
+      ? exception
+      : JSON.stringify(exception);
   }
 }

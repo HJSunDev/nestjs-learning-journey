@@ -113,7 +113,7 @@
 - ✅ **[045. RAG 检索增强生成 (Retriever & Vector Store)](notes/045-rag-and-vector-store.md)**
   - 自实现 PgVectorStore（继承 @langchain/core VectorStore），Qwen3-Embedding-8B 向量化，RecursiveCharacterTextSplitter 切块，跑通完整 RAG 链路
 - ✅ **[046. 生产级可观测性与韧性 (Observability & Resilience)](notes/046-observability-and-resilience.md)**
-  - LangChainTracer 回调链路追踪、ResilienceService（.withRetry() 重试 + .withFallbacks() 降级）、追踪摘要随响应返回
+  - LangChainTracer 回调链路追踪、ResilienceService（.withRetry() 重试 + .withFallbacks() 降级）、追踪摘要随响应返回、双层超时控制（Per-Call HTTP 超时 + ToolCallingLoop AbortController 聚合超时 → 504）
 <!-- NEW_AI_CORE_END -->
 
 ## 🛸 阶段四：LangGraph 有状态智能体

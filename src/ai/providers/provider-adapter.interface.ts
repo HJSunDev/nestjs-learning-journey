@@ -21,6 +21,8 @@ export interface AdapterModelParams {
    * 对 Anthropic 等其他协议，Adapter 自行决定如何映射。
    */
   modelKwargs?: Record<string, unknown>;
+  /** 单次 HTTP 请求超时（毫秒），传递给底层 HTTP 客户端（如 Axios） */
+  timeout?: number;
 }
 
 /**

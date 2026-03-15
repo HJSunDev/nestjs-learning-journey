@@ -78,6 +78,8 @@ export interface CreateModelOptions {
    * 由 Service 层负责根据 ModelDefinition.reasoningKwargs 构造。
    */
   modelKwargs?: Record<string, unknown>;
+  /** 单次 HTTP 请求超时（毫秒），未指定时使用 ai.timeout.perCallMs 全局默认值 */
+  timeout?: number;
 }
 
 /**
@@ -121,9 +123,12 @@ export class AiModelFactory {
     const apiKey = this.getApiKey(provider);
     const model = options.model || entry.defaultModel;
     const baseUrl = this.getBaseUrl(provider) || entry.fallbackBaseUrl;
+    const timeout =
+      options.timeout ?? this.configService.get<number>('ai.timeout.perCallMs');
 
     this.logger.debug(
       `创建模型 [provider=${provider}, model=${model}` +
+        `${timeout ? `, timeout=${timeout}ms` : ''}` +
         `${options.modelKwargs ? `, kwargs=${JSON.stringify(options.modelKwargs)}` : ''}]`,
     );
 
@@ -135,6 +140,7 @@ export class AiModelFactory {
       streaming: options.streaming,
       maxTokens: options.maxTokens,
       modelKwargs: options.modelKwargs,
+      timeout,
     });
   }
 

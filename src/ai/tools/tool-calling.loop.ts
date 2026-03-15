@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { Runnable } from '@langchain/core/runnables';
 import {
@@ -72,13 +73,17 @@ const DEFAULT_MAX_ITERATIONS = 5;
  * - 不依赖 LCEL 链，直接操作 model.bindTools() + invoke/stream
  * - 工具执行失败不终止循环，将错误信息作为 ToolMessage 返回给模型
  * - 通过 maxIterations 防止无限循环
+ * - 通过 AbortController + timeoutMs 防止整体耗时过长
  * - 支持非流式（execute）和流式（streamExecute）两种模式
  */
 @Injectable()
 export class ToolCallingLoop {
   private readonly logger = new Logger(ToolCallingLoop.name);
 
-  constructor(private readonly toolRegistry: ToolRegistry) {}
+  constructor(
+    private readonly toolRegistry: ToolRegistry,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
    * 执行工具调用循环（非流式）
@@ -90,11 +95,9 @@ export class ToolCallingLoop {
    * 4. 若无 tool_calls：返回模型的文本响应作为最终结果
    * 5. 达到 maxIterations 上限时，移除工具绑定做最终调用
    *
-   * @param params.model          由 AiModelFactory 创建的模型实例
-   * @param params.messages       项目内部消息列表
-   * @param params.systemPrompt   可选系统提示词
-   * @param params.toolNames      要启用的工具名称列表（为空则启用全部）
-   * @param params.maxIterations  最大迭代次数
+   * 超时机制：
+   * 通过 AbortController 设置整个循环的总超时。signal 传递给每次 invoke()，
+   * 超时触发时当前 LLM 调用被中止，循环立即终止并抛出带调试上下文的错误。
    */
   async execute(params: {
     model: BaseChatModel;
@@ -102,6 +105,13 @@ export class ToolCallingLoop {
     systemPrompt?: string;
     toolNames?: string[];
     maxIterations?: number;
+    /**
+     * 整个循环的超时限制（毫秒）
+     *
+     * 未指定时使用 ai.timeout.toolCallingLoopMs 配置值。
+     * 设为 0 表示不限制。
+     */
+    timeoutMs?: number;
   }): Promise<ToolCallingResult> {
     const maxIterations = params.maxIterations ?? DEFAULT_MAX_ITERATIONS;
     const tools = this.toolRegistry.getTools(params.toolNames);
@@ -112,6 +122,9 @@ export class ToolCallingLoop {
       );
     }
 
+    // 创建超时守卫
+    const { signal, cleanup } = this.createTimeoutGuard(params.timeoutMs);
+    // 将工具绑定到模型
     const modelWithTools = this.bindTools(params.model, tools);
     const currentMessages: BaseMessage[] = convertToLangChainMessages(
       params.messages,
@@ -119,35 +132,47 @@ export class ToolCallingLoop {
     );
 
     const rounds: ToolCallRound[] = [];
+    const startTime = Date.now();
 
-    for (let i = 0; i < maxIterations; i++) {
-      this.logger.debug(`工具调用循环 - 第 ${i + 1}/${maxIterations} 轮`);
+    try {
+      for (let i = 0; i < maxIterations; i++) {
+        this.logger.debug(`工具调用循环 - 第 ${i + 1}/${maxIterations} 轮`);
 
-      const response = (await modelWithTools.invoke(
-        currentMessages,
-      )) as AIMessageChunk;
+        const response = (await modelWithTools.invoke(currentMessages, {
+          signal,
+        })) as AIMessageChunk;
 
-      // 没有 tool_calls 表示模型已完成推理，返回最终结果
-      if (!response.tool_calls?.length) {
-        return this.buildResult(response, rounds);
+        if (!response.tool_calls?.length) {
+          return this.buildResult(response, rounds);
+        }
+
+        const round = await this.executeToolCallRound(
+          i + 1,
+          response,
+          currentMessages,
+        );
+        rounds.push(round);
       }
 
-      // 执行本轮的所有工具调用
-      const round = await this.executeToolCallRound(
-        i + 1,
-        response,
-        currentMessages,
+      // 达到最大迭代次数，移除工具绑定做最终推理
+      this.logger.warn(
+        `工具调用循环达到上限 (${maxIterations} 轮)，执行最终推理`,
       );
-      rounds.push(round);
+      const finalResponse = await params.model.invoke(currentMessages, {
+        signal,
+      });
+
+      return this.buildResult(finalResponse, rounds);
+    } catch (error) {
+      throw this.handleLoopError(
+        error,
+        startTime,
+        rounds.length,
+        params.timeoutMs,
+      );
+    } finally {
+      cleanup();
     }
-
-    // 达到最大迭代次数，移除工具绑定做最终推理
-    this.logger.warn(
-      `工具调用循环达到上限 (${maxIterations} 轮)，执行最终推理`,
-    );
-    const finalResponse = await params.model.invoke(currentMessages);
-
-    return this.buildResult(finalResponse, rounds);
   }
 
   /**
@@ -172,6 +197,8 @@ export class ToolCallingLoop {
     systemPrompt?: string;
     toolNames?: string[];
     maxIterations?: number;
+    /** 整个循环的超时限制（毫秒），未指定时使用配置默认值，设为 0 不限制 */
+    timeoutMs?: number;
   }): Subject<StreamChunk> {
     const subject = new Subject<StreamChunk>();
 
@@ -190,9 +217,17 @@ export class ToolCallingLoop {
       systemPrompt?: string;
       toolNames?: string[];
       maxIterations?: number;
+      timeoutMs?: number;
     },
     subject: Subject<StreamChunk>,
   ): Promise<void> {
+    // 创建超时守卫
+    const { signal, cleanup } = this.createTimeoutGuard(params.timeoutMs);
+    // 记录开始时间
+    const startTime = Date.now();
+    // 记录完成的轮次
+    let completedRounds = 0;
+
     try {
       const maxIterations = params.maxIterations ?? DEFAULT_MAX_ITERATIONS;
       const tools = this.toolRegistry.getTools(params.toolNames);
@@ -217,10 +252,10 @@ export class ToolCallingLoop {
           `[Stream] 工具调用循环 - 第 ${i + 1}/${maxIterations} 轮`,
         );
 
-        // 中间轮次：用 invoke 获取完整的 tool_calls
-        const response = (await modelWithTools.invoke(
-          currentMessages,
-        )) as AIMessageChunk;
+        // 中间轮次：用 invoke 获取完整的 tool_calls,传入 AbortSignal 防止超时
+        const response = (await modelWithTools.invoke(currentMessages, {
+          signal,
+        })) as AIMessageChunk;
 
         if (!response.tool_calls?.length) {
           // 最终轮次：对同样的消息发起流式调用以获取逐 chunk 输出
@@ -228,24 +263,39 @@ export class ToolCallingLoop {
             modelWithTools,
             currentMessages,
             subject,
+            signal,
           );
           return;
         }
 
         // 发射工具调用事件并执行
         await this.emitToolCallRound(i + 1, response, currentMessages, subject);
+        completedRounds = i + 1;
       }
 
       // 达到最大迭代次数
       this.logger.warn(`[Stream] 工具调用循环达到上限 (${maxIterations} 轮)`);
-      await this.streamFinalResponse(params.model, currentMessages, subject);
+      await this.streamFinalResponse(
+        params.model,
+        currentMessages,
+        subject,
+        signal,
+      );
     } catch (error) {
-      this.logger.error('流式工具调用循环发生错误', error);
+      const wrapped = this.handleLoopError(
+        error,
+        startTime,
+        completedRounds,
+        params.timeoutMs,
+      );
+      this.logger.error('流式工具调用循环发生错误', wrapped);
       subject.next({
         type: StreamChunkType.ERROR,
-        error: error instanceof Error ? error.message : String(error),
+        error: wrapped.message,
       });
       subject.complete();
+    } finally {
+      cleanup();
     }
   }
 
@@ -405,8 +455,9 @@ export class ToolCallingLoop {
     model: Runnable,
     messages: BaseMessage[],
     subject: Subject<StreamChunk>,
+    signal?: AbortSignal,
   ): Promise<void> {
-    const stream = await model.stream(messages);
+    const stream = await model.stream(messages, { signal });
     let usage: ToolCallingResult['usage'];
     let finishReason: string | undefined;
 
@@ -456,6 +507,64 @@ export class ToolCallingLoop {
       usage: this.extractTokenUsage(response),
       finishReason: this.extractFinishReason(response),
     };
+  }
+
+  /**
+   * 创建超时守卫
+   *
+   * 返回 AbortSignal 和 cleanup 函数。signal 传递给 invoke/stream，
+   * 超时触发时 abort() 中止当前 LLM 调用。
+   * cleanup 在 finally 中调用以清理定时器，防止内存泄漏。
+   *
+   * @param timeoutMs 超时时间（毫秒），undefined 使用配置默认值，0 表示不限制
+   */
+  private createTimeoutGuard(timeoutMs?: number): {
+    signal: AbortSignal | undefined;
+    cleanup: () => void;
+  } {
+    const resolvedTimeout =
+      timeoutMs ??
+      this.configService.get<number>('ai.timeout.toolCallingLoopMs');
+
+    if (!resolvedTimeout || resolvedTimeout <= 0) {
+      return { signal: undefined, cleanup: () => {} };
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), resolvedTimeout);
+
+    this.logger.debug(`工具调用循环超时守卫已启动: ${resolvedTimeout}ms`);
+
+    return {
+      signal: controller.signal,
+      cleanup: () => clearTimeout(timer),
+    };
+  }
+
+  /**
+   * 统一处理循环中的错误
+   *
+   * 将 AbortError 包装为包含调试上下文的业务错误（实际耗时、已完成轮次等），
+   * 非超时错误原样返回。
+   */
+  private handleLoopError(
+    error: unknown,
+    startTime: number,
+    completedRounds: number,
+    timeoutMs?: number,
+  ): Error {
+    if (error instanceof Error && error.name === 'AbortError') {
+      const elapsed = Date.now() - startTime;
+      const limit =
+        timeoutMs ??
+        this.configService.get<number>('ai.timeout.toolCallingLoopMs') ??
+        0;
+      return new Error(
+        `工具调用循环超时: 已执行 ${elapsed}ms (限制 ${limit}ms), ` +
+          `完成 ${completedRounds} 轮工具调用后中止`,
+      );
+    }
+    return error instanceof Error ? error : new Error(String(error));
   }
 
   private extractTokenUsage(

@@ -28,6 +28,8 @@ export class OpenAICompatibleAdapter implements IProviderAdapter {
       temperature: params.temperature,
       streaming: params.streaming,
       maxTokens: params.maxTokens,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- ChatDeepSeek 的 timeout 类型继承自 OpenAI SDK 的 ClientOptions，其内部类型解析为 error 类型，属于第三方类型缺陷
+      ...(params.timeout != null ? { timeout: params.timeout } : {}),
       ...(params.modelKwargs ? { modelKwargs: params.modelKwargs } : {}),
       ...(params.baseUrl ? { configuration: { baseURL: params.baseUrl } } : {}),
     });

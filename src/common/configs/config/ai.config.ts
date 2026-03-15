@@ -107,6 +107,20 @@ export default registerAs('ai', () => ({
     tableName: process.env.AI_RAG_TABLE_NAME || 'langchain_documents',
   },
 
+  // 超时配置
+  timeout: {
+    // 单次 LLM API 调用的 HTTP 超时（毫秒），作用于 Axios 请求层
+    perCallMs: parseInt(process.env.AI_TIMEOUT_PER_CALL || '60000', 10),
+    // 同步工具调用循环的总超时（毫秒），保护 HTTP 请求不被无限占用。
+    // 仅作用于 ToolCallingLoop（同步 HTTP 请求内的工具调用循环），
+    // 不适用于未来 LangGraph 的异步长时运行智能体（那类任务有独立的任务级 TTL 和步骤超时）。
+    // 设为 0 表示不限制（依赖 perCallMs + maxIterations 提供保护）。
+    toolCallingLoopMs: parseInt(
+      process.env.AI_TIMEOUT_TOOL_CALLING_LOOP || '300000',
+      10,
+    ),
+  },
+
   // 会话记忆配置
   memory: {
     // 默认会话 TTL (Time To Live，生存时间，单位：秒)
