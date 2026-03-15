@@ -3,6 +3,7 @@ import {
   Catch,
   ArgumentsHost,
   HttpStatus,
+  HttpException,
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
@@ -35,6 +36,8 @@ const UPSTREAM_STATUS_MAP: Record<number, HttpStatus> = {
  *   （LangChain 抛出的不是标准 Error 子类，无法用具体类型匹配）
  * - 挂载在 AiController 上而非全局，避免干扰其他模块的异常处理
  * - Service 层不需要 try-catch，保持纯业务逻辑
+ * - NestJS 自身的 HttpException（如 ValidationPipe 抛出的 BadRequestException）
+ *   优先走标准路径，保留校验详情；仅对 LangChain 等非标准异常走自定义提取
  */
 @Catch()
 export class AiExceptionFilter implements ExceptionFilter {
@@ -45,6 +48,32 @@ export class AiExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
+    // NestJS 框架层的 HttpException（ValidationPipe、BadRequestException 等）
+    // 走标准处理路径，保留完整的校验错误详情
+    if (exception instanceof HttpException) {
+      const httpStatus = exception.getStatus();
+      const exceptionResponse = exception.getResponse();
+
+      // ValidationPipe 的 getResponse() 返回 { statusCode, message: string[], error }
+      const detail =
+        typeof exceptionResponse === 'object'
+          ? exceptionResponse
+          : { message: exceptionResponse };
+
+      this.logger.error(
+        `请求校验失败 [${request.method} ${request.url}]: ${exception.message}`,
+      );
+
+      response.status(httpStatus).json({
+        statusCode: httpStatus,
+        timestamp: new Date().toISOString(),
+        path: request.url,
+        ...detail,
+      });
+      return;
+    }
+
+    // LangChain 等非标准异常走自定义提取逻辑
     const { status, message, type } = this.extractErrorInfo(exception);
     const httpStatus = UPSTREAM_STATUS_MAP[status] ?? HttpStatus.BAD_GATEWAY;
 

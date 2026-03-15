@@ -44,6 +44,8 @@ import {
   SimilaritySearchResponseDto,
   CollectionListResponseDto,
   DeleteCollectionResponseDto,
+  ResilientChatRequestDto,
+  ResilientChatResponseDto,
 } from './dto';
 import { AiExceptionFilter } from './filters/ai-exception.filter';
 import { Public } from 'src/common/decorators/public.decorator';
@@ -59,6 +61,7 @@ import { AiStreamAdapter } from './adapters/stream.adapter';
  * 043 章节扩展：新增 /tool-calling/* 端点，支持 Agentic 工具调用循环。
  * 044 章节扩展：新增 /memory/* 端点，支持基于 Redis 的有状态多轮会话管理。
  * 045 章节扩展：新增 /rag/* 端点，支持 RAG 检索增强生成（文档摄入、对话、搜索、集合管理）。
+ * 046 章节扩展：新增 /resilient/* 端点，支持带可观测性追踪和韧性策略（重试 + 降级）的对话。
  */
 @ApiTags('AI 服务 (LCEL 管道版)')
 @ApiBearerAuth()
@@ -510,5 +513,58 @@ export class LcelController {
     @Param('collection') collection: string,
   ): Promise<DeleteCollectionResponseDto> {
     return this.lcelService.deleteCollection(collection);
+  }
+
+  // ============================================================
+  // 046 可观测性与韧性端点
+  // ============================================================
+
+  @Public()
+  @Post('resilient/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '韧性对话（带追踪 + 重试 + 降级）',
+    description:
+      '在标准 LCEL 管道基础上叠加生产级韧性策略：' +
+      '1) LangChainTracer 回调实现 per-request 链路追踪，' +
+      '2) .withRetry() 对瞬时错误自动重试（指数退避），' +
+      '3) .withFallbacks() 在主模型不可用时自动切换到备用模型。' +
+      '响应中包含完整的追踪摘要（耗时、token 用量、LLM 调用次数等）。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '韧性对话成功',
+    type: ResilientChatResponseDto,
+  })
+  async resilientChat(
+    @Body() dto: ResilientChatRequestDto,
+  ): Promise<ResilientChatResponseDto> {
+    return this.lcelService.resilientChat(dto);
+  }
+
+  @Public()
+  @Post('resilient/chat/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '流式韧性对话',
+    description:
+      '与非流式版本共享同一套韧性策略。' +
+      '注意：.withFallbacks() 在流式模式下仅对流创建阶段的错误触发降级。',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiResponse({
+    status: 200,
+    description: 'SSE 流式响应',
+  })
+  streamResilientChat(
+    @Body() dto: ResilientChatRequestDto,
+    @Res() res: Response,
+  ): void {
+    const stream$ = this.lcelService.streamResilientChat(dto);
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: 'LCEL韧性对话',
+      provider: dto.provider,
+      model: dto.model,
+    });
   }
 }

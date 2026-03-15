@@ -66,7 +66,9 @@ export interface PreparedMemoryChain {
  *        由 RunnableWithMessageHistory 在运行时注入 Redis 历史
  * - 045: 通过 createRagPrompt 构建 RAG 链，{context} 由 Service 层
  *        从向量检索结果拼接后注入
- * - 046: 通过 .withRetry() 追加重试 → chain.withRetry({ stopAfterAttempt: 3 })
+ * - 046: 韧性能力由 ResilienceService 在链构建完成后叠加（装饰者模式），
+ *        ChatChainBuilder 保持"纯组装"职责，不感知重试/降级逻辑。
+ *        可观测性通过 LangChainTracer 回调在 invoke/stream 时注入。
  */
 @Injectable()
 export class ChatChainBuilder {

@@ -5,3 +5,4 @@ export * from './structured-request.dto';
 export * from './tool-calling.dto';
 export * from './memory-chat.dto';
 export * from './rag.dto';
+export * from './resilient-chat.dto';

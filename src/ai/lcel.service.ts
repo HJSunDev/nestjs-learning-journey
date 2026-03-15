@@ -11,6 +11,8 @@ import { ToolCallingLoop } from './tools/tool-calling.loop';
 import { ChatHistoryFactory } from './memory';
 import { SessionManagerService } from './memory';
 import { VectorStoreService, DocumentProcessor } from './rag';
+import { LangChainTracer } from './observability';
+import { ResilienceService } from './resilience';
 import { AiProvider, ReasoningMode, StreamChunkType } from './constants';
 import { MODEL_REGISTRY } from './constants/model-registry';
 import {
@@ -37,6 +39,8 @@ import {
   SimilaritySearchResponseDto,
   CollectionListResponseDto,
   DeleteCollectionResponseDto,
+  ResilientChatRequestDto,
+  ResilientChatResponseDto,
 } from './dto';
 import { Observable, Subject } from 'rxjs';
 import { StreamChunk } from './interfaces';
@@ -67,6 +71,12 @@ import { StreamChunk } from './interfaces';
  * - 新增 ingestDocuments / ragChat / streamRagChat / similaritySearch 方法
  * - 通过 PgVectorStore + OpenAIEmbeddings 实现检索增强生成
  * - 新增 listCollections / deleteCollection 集合管理方法
+ *
+ * 046 章节扩展：
+ * - 新增 resilientChat / streamResilientChat 方法
+ * - LangChainTracer 回调处理器：per-request 粒度的链路追踪
+ * - ResilienceService：.withRetry() 重试 + .withFallbacks() 降级
+ * - 追踪摘要（TraceSummary）随响应返回，提供结构化的可观测性指标
  */
 @Injectable()
 export class LcelService {
@@ -83,6 +93,7 @@ export class LcelService {
     private readonly sessionManager: SessionManagerService,
     private readonly vectorStoreService: VectorStoreService,
     private readonly documentProcessor: DocumentProcessor,
+    private readonly resilienceService: ResilienceService,
   ) {}
 
   /**
@@ -1012,6 +1023,9 @@ export class LcelService {
    * 接收泛化的 Runnable（而非 BaseChatModel），使其可与任意 LCEL 管道配合。
    * 044 扩展：新增可选 config 参数，供 RunnableWithMessageHistory 传入 sessionId。
    * 045 扩展：新增可选 doneExtras 参数，作为流结束时元数据（如 RAG sources）的通用注入机制。
+   * 046 扩展：新增可选 tracer 参数，在流结束时动态计算追踪摘要并注入 DONE 块。
+   *          不能放在 doneExtras 中，因为 doneExtras 在流开始前传入，
+   *          而追踪摘要必须在流结束后（所有 Span 收集完毕）才能计算。
    */
   private async executeStream(
     chain: Runnable,
@@ -1021,6 +1035,8 @@ export class LcelService {
     config?: Record<string, unknown>,
     // 随 DONE 块下发的附加元数据（如 sources、usage 等），提供通用的流结束信息注入能力
     doneExtras?: Partial<Omit<StreamChunk, 'type'>>,
+    // 可选的追踪器实例，流结束时自动调用 logSummary() 并将摘要注入 DONE 块
+    tracer?: LangChainTracer,
   ) {
     try {
       const stream = await chain.stream(chainInput, config);
@@ -1057,12 +1073,26 @@ export class LcelService {
         }
       }
 
-      subject.next({
+      // 流结束后，所有回调（handleLLMEnd 等）已触发完毕，此时计算追踪摘要
+      const doneChunk: StreamChunk = {
         type: StreamChunkType.DONE,
         usage,
         finishReason,
         ...doneExtras,
-      });
+      };
+
+      if (tracer) {
+        const summary = tracer.logSummary();
+        doneChunk.trace = {
+          traceId: summary.traceId,
+          totalLatencyMs: summary.totalLatencyMs,
+          llmCallCount: summary.llmCallCount,
+          llmTotalLatencyMs: summary.llmTotalLatencyMs,
+          totalTokens: summary.totalTokenUsage.total,
+        };
+      }
+
+      subject.next(doneChunk);
       subject.complete();
     } catch (error) {
       this.logger.error('流式处理发生错误', error);
@@ -1109,5 +1139,227 @@ export class LcelService {
 
     const reason = metadata.finish_reason;
     return typeof reason === 'string' ? reason : undefined;
+  }
+
+  // ============================================================
+  // 046 可观测性与韧性 (Observability & Resilience)
+  // ============================================================
+
+  /**
+   * 韧性对话（非流式）
+   *
+   * 完整链路：
+   * 1. 创建 LangChainTracer（per-request 追踪回调）
+   * 2. 构建 LCEL 管道（prompt → model）
+   * 3. 通过 ResilienceService 叠加重试 + 降级策略
+   * 4. 以 callbacks 方式注入 Tracer，自动传播到所有嵌套组件
+   * 5. 返回对话结果 + 追踪摘要
+   *
+   * @param dto 韧性对话请求参数
+   * @returns 包含对话内容和追踪摘要的响应
+   */
+  async resilientChat(
+    dto: ResilientChatRequestDto,
+  ): Promise<ResilientChatResponseDto> {
+    const tracer = new LangChainTracer(this.logger);
+
+    this.logger.log(
+      `[LCEL-Resilient] 韧性对话，提供商: ${dto.provider}, 模型: ${dto.model}, ` +
+        `traceId: ${tracer.getTraceId()}`,
+    );
+
+    const modelKwargs = this.resolveModelKwargs(
+      dto.provider,
+      dto.model,
+      dto.enableReasoning,
+    );
+
+    const model = this.modelFactory.createChatModel(dto.provider, {
+      model: dto.model,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      modelKwargs,
+    });
+
+    const { chain, input } = this.chainBuilder.buildChatChain(
+      model,
+      dto.messages,
+      dto.systemPrompt,
+    );
+
+    // 叠加韧性策略
+    let resilientChain: Runnable = chain;
+
+    if (dto.enableRetry !== false) {
+      resilientChain = this.resilienceService.withRetry(resilientChain, {
+        maxAttempts: dto.maxRetryAttempts ?? 2,
+      });
+    }
+
+    if (dto.fallbacks?.length) {
+      const fallbackModels = this.resilienceService.createFallbackModels(
+        dto.fallbacks.map((f) => ({
+          provider: f.provider,
+          model: f.model,
+        })),
+        { temperature: dto.temperature, maxTokens: dto.maxTokens },
+      );
+
+      // 为每个降级模型构建完整的 prompt → model 管道
+      const fallbackChains = fallbackModels.map((fbModel) => {
+        const { chain: fbChain } = this.chainBuilder.buildChatChain(
+          fbModel,
+          dto.messages,
+          dto.systemPrompt,
+        );
+        // 降级链也应用重试
+        return dto.enableRetry !== false
+          ? this.resilienceService.withRetry(fbChain, {
+              maxAttempts: dto.maxRetryAttempts ?? 2,
+            })
+          : fbChain;
+      });
+
+      if (fallbackChains.length > 0) {
+        resilientChain = this.resilienceService.withFallbacks(
+          resilientChain,
+          fallbackChains,
+        );
+      }
+    }
+
+    // 通过 callbacks 注入 Tracer，LangChain 自动向下传播到 model 层
+    const result = (await resilientChain.invoke(input, {
+      callbacks: [tracer],
+    })) as AIMessageChunk;
+
+    const summary = tracer.logSummary();
+
+    const normalized = this.reasoningNormalizer.normalize(
+      dto.provider,
+      result as unknown as Record<string, unknown>,
+    );
+
+    return {
+      content: normalized.content,
+      reasoning: normalized.reasoning ?? undefined,
+      usage: this.extractTokenUsage(result),
+      finishReason: this.extractFinishReason(result),
+      trace: {
+        traceId: summary.traceId,
+        totalLatencyMs: summary.totalLatencyMs,
+        llmCallCount: summary.llmCallCount,
+        llmTotalLatencyMs: summary.llmTotalLatencyMs,
+        totalTokens: summary.totalTokenUsage.total,
+        toolCallCount: summary.toolCallCount || undefined,
+        retrieverCallCount: summary.retrieverCallCount || undefined,
+        retryTriggered: summary.llmCallCount > 1,
+        fallbackTriggered: summary.hasError,
+      },
+    };
+  }
+
+  /**
+   * 韧性对话（流式）
+   *
+   * 与非流式版本共享同一套韧性策略组装逻辑，
+   * 区别在于使用 .stream() 而非 .invoke()。
+   *
+   * 注意：LangChain 的 .withFallbacks() 在流式模式下仅对流创建阶段的错误
+   * 触发降级，流开始后的错误不会触发。这是框架层面的设计限制。
+   *
+   * @param dto 韧性对话请求参数
+   * @returns StreamChunk 的 Observable 流
+   */
+  streamResilientChat(dto: ResilientChatRequestDto): Observable<StreamChunk> {
+    const tracer = new LangChainTracer(this.logger);
+    const subject = new Subject<StreamChunk>();
+
+    this.logger.log(
+      `[LCEL-Resilient] 流式韧性对话，提供商: ${dto.provider}, 模型: ${dto.model}, ` +
+        `traceId: ${tracer.getTraceId()}`,
+    );
+
+    const modelKwargs = this.resolveModelKwargs(
+      dto.provider,
+      dto.model,
+      dto.enableReasoning,
+    );
+
+    const model = this.modelFactory.createChatModel(dto.provider, {
+      model: dto.model,
+      streaming: true,
+      maxTokens: dto.maxTokens,
+      modelKwargs,
+    });
+
+    const { chain, input } = this.chainBuilder.buildChatChain(
+      model,
+      dto.messages,
+      dto.systemPrompt,
+    );
+
+    let resilientChain: Runnable = chain;
+
+    if (dto.enableRetry !== false) {
+      resilientChain = this.resilienceService.withRetry(resilientChain, {
+        maxAttempts: dto.maxRetryAttempts ?? 2,
+      });
+    }
+
+    if (dto.fallbacks?.length) {
+      const fallbackModels = this.resilienceService.createFallbackModels(
+        dto.fallbacks.map((f) => ({
+          provider: f.provider,
+          model: f.model,
+        })),
+        {
+          temperature: dto.temperature,
+          streaming: true,
+          maxTokens: dto.maxTokens,
+        },
+      );
+
+      const fallbackChains = fallbackModels.map((fbModel) => {
+        const { chain: fbChain } = this.chainBuilder.buildChatChain(
+          fbModel,
+          dto.messages,
+          dto.systemPrompt,
+        );
+        return dto.enableRetry !== false
+          ? this.resilienceService.withRetry(fbChain, {
+              maxAttempts: dto.maxRetryAttempts ?? 2,
+            })
+          : fbChain;
+      });
+
+      if (fallbackChains.length > 0) {
+        resilientChain = this.resilienceService.withFallbacks(
+          resilientChain,
+          fallbackChains,
+        );
+      }
+    }
+
+    void this.executeStream(
+      resilientChain,
+      dto.provider,
+      input,
+      subject,
+      { callbacks: [tracer] },
+      undefined,
+      tracer,
+    );
+
+    return subject.asObservable();
+  }
+
+  /**
+   * 创建 LangChainTracer 实例（供其他模块或高级场景使用）
+   *
+   * 允许调用方获取独立的 Tracer 实例，手动传入 callbacks 实现自定义追踪。
+   */
+  createTracer(): LangChainTracer {
+    return new LangChainTracer(this.logger);
   }
 }

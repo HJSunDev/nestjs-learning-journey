@@ -39,6 +39,14 @@ export interface StreamChunk {
     score: number;
     metadata?: Record<string, unknown>;
   }>;
+  /** 链路追踪摘要（随 done 块返回，046 章节新增） */
+  trace?: {
+    traceId: string;
+    totalLatencyMs: number;
+    llmCallCount: number;
+    llmTotalLatencyMs: number;
+    totalTokens: number;
+  };
 }
 
 /**

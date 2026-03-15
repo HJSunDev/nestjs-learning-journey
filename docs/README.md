@@ -112,8 +112,8 @@
   - 自行实现 RedisChatHistory（零新依赖），RunnableWithMessageHistory 有状态链，WindowedChatHistory 滑动窗口裁剪
 - ✅ **[045. RAG 检索增强生成 (Retriever & Vector Store)](notes/045-rag-and-vector-store.md)**
   - 自实现 PgVectorStore（继承 @langchain/core VectorStore），Qwen3-Embedding-8B 向量化，RecursiveCharacterTextSplitter 切块，跑通完整 RAG 链路
-- 🔲 **[046. 生产级可观测性与韧性 (Observability & Resilience)](notes/046-observability-and-resilience.md)**
-  - LangChain Callbacks 日志打点、`.withRetry()` 降级策略、核心链路单元测试
+- ✅ **[046. 生产级可观测性与韧性 (Observability & Resilience)](notes/046-observability-and-resilience.md)**
+  - LangChainTracer 回调链路追踪、ResilienceService（.withRetry() 重试 + .withFallbacks() 降级）、追踪摘要随响应返回
 <!-- NEW_AI_CORE_END -->
 
 ## 🛸 阶段四：LangGraph 有状态智能体

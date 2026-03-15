@@ -18,6 +18,7 @@ import {
   VectorStoreService,
   DocumentProcessor,
 } from './rag';
+import { ResilienceService } from './resilience';
 
 /**
  * AI 模块
@@ -52,6 +53,10 @@ import {
  * - DocumentProcessor:     文档切块处理器（RecursiveCharacterTextSplitter）
  * - PgVectorStore:          自行实现的 VectorStore（复用 pg，零新集成包依赖）
  *
+ * 046 新增可观测性与韧性层：
+ * - LangChainTracer:       BaseCallbackHandler 实现（per-request 链路追踪，非 DI 注入）
+ * - ResilienceService:     韧性包装服务（.withRetry() 重试 + .withFallbacks() 降级）
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -77,6 +82,7 @@ import {
     EmbeddingsFactory,
     VectorStoreService,
     DocumentProcessor,
+    ResilienceService,
   ],
   exports: [
     AiService,
@@ -92,6 +98,7 @@ import {
     EmbeddingsFactory,
     VectorStoreService,
     DocumentProcessor,
+    ResilienceService,
   ],
 })
 export class AiModule {}
