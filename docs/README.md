@@ -119,11 +119,26 @@
 ## 🛸 阶段四：LangGraph 有状态智能体
 
 > 在 LCEL + Tool Calling 基础之上，进入 LangGraph 状态机驱动的智能体开发。
+> 以 OpenClaw 级智能体为理解目标，详细设计参见 [agent-phase-design.md](agent-phase-design.md)。
 
-- 🔲 **047. LangGraph 基础：状态图与节点流转** (StateGraph, Nodes, Edges)
-- 🔲 **048. 生产级 ReAct Agent 构建** (超越早期黑盒 AgentExecutor)
-- 🔲 **049. 智能体持久化与人机协同** (Checkpointer & Human-in-the-loop)
-- 🔲 **050. 多智能体协作网络** (Supervisor & Handoff 架构)
+<!-- NEW_AGENT_START -->
+- 🔲 **047. LangGraph 核心：状态图与图编排 (StateGraph Fundamentals)**
+  - StateSchema 类型系统（MessagesValue/ReducedValue/UntrackedValue）、Graph API + Functional API 双范式、`task()` 持久化原语、`contextSchema` 运行时注入
+- 🔲 **048. 生产级 ReAct Agent (ReAct Agent with LangGraph)**
+  - 自建 + `createReactAgent` prebuilt 双路径、2026 安全拦截 / 上下文压缩 / 替代思路评估、MCP 协议意识
+- 🔲 **049. 持久化执行与线程管理 (Durable Execution & Thread Lifecycle)**
+  - Durable Execution 三模式（sync/async/exit）、`task()` 持久化语义与幂等性、Super-step 与 Checkpoint、PostgresSaver 生产集成、Time-travel 调试
+- 🔲 **050. 人机协同模式 (Human-in-the-Loop Patterns)**
+  - `interrupt()` 动态中断与 `Command({ resume })` 恢复、审批 / 编辑 / 验证 / 工具内中断四大模式、Command 从工具返回控制流、分层审批框架
+- 🔲 **051. 高级 Agent 模式 (Advanced Agent Patterns)**
+  - Subgraph 模块化、Reflection 自我修正、Plan-and-Execute、模式选型指南
+- 🔲 **052. 记忆体系与运行时扩展 (Memory & Runtime Extensibility)**
+  - Store 长期记忆（语义/情景/程序记忆）、Lane Queue 会话串行队列、Skills-as-Markdown 扩展模型
+- 🔲 **053. 多智能体协作系统 (Multi-Agent Architecture)**
+  - Supervisor（`@langchain/langgraph-supervisor` + 自建）、Handoff（Command 跨图路由）、Subgraph 嵌套与 checkpoint namespace 隔离、OpenClaw Brain-Body-Soul 架构剖析
+- 🔲 **054. 生产级 Agent 运维与治理 (Production Agent Operations)**
+  - 异步长时运行 + Durable 模式选型、Circuit Breaker 熔断、Contextual Compaction 上下文压缩、安全护栏（Security Agent + Agent 隔离）、MCP 工具标准化、评估指标体系
+<!-- NEW_AGENT_END -->
 
 ## 📝 维护指南
 
