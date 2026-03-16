@@ -6,3 +6,4 @@ export * from './tool-calling.dto';
 export * from './memory-chat.dto';
 export * from './rag.dto';
 export * from './resilient-chat.dto';
+export * from './graph-chat.dto';

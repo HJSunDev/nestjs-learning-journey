@@ -9,6 +9,8 @@ import { ToolCallingLoop } from './tools/tool-calling.loop';
 import { AiModelFactory } from './factories/model.factory';
 import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { AgentRegistry } from './agents/agent.registry';
+import { AgentController } from './agents/agent.controller';
+import { GraphService } from './agents/graph.service';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
@@ -57,6 +59,14 @@ import { ResilienceService } from './resilience';
  * - LangChainTracer:       BaseCallbackHandler 实现（per-request 链路追踪，非 DI 注入）
  * - ResilienceService:     韧性包装服务（.withRetry() 重试 + .withFallbacks() 降级）
  *
+ * 047 新增 LangGraph StateGraph 层：
+ * - AgentController:       独立的 Agent HTTP 入口（路由前缀 /ai/agent，与 LCEL 完全隔离）
+ * - GraphService:          NestJS 与 LangGraph 的桥接层（管理编译后的 StateGraph）
+ * - AgentState:            共享 State 定义（StateSchema + MessagesValue + ReducedValue）
+ * - callModelNode / executeToolsNode / shouldContinue: 共享图节点和条件路由
+ * - buildToolGraph:        Graph API 版工具调用图构建器
+ * - buildFunctionalToolAgent: Functional API 版工具调用 Agent
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -65,7 +75,7 @@ import { ResilienceService } from './resilience';
  */
 @Module({
   imports: [ConfigModule],
-  controllers: [AiController, LcelController],
+  controllers: [AiController, LcelController, AgentController],
   providers: [
     AiService,
     LcelService,
@@ -83,6 +93,7 @@ import { ResilienceService } from './resilience';
     VectorStoreService,
     DocumentProcessor,
     ResilienceService,
+    GraphService,
   ],
   exports: [
     AiService,
@@ -99,6 +110,7 @@ import { ResilienceService } from './resilience';
     VectorStoreService,
     DocumentProcessor,
     ResilienceService,
+    GraphService,
   ],
 })
 export class AiModule {}

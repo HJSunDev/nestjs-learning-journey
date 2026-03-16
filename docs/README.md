@@ -122,8 +122,8 @@
 > 以 OpenClaw 级智能体为理解目标，详细设计参见 [agent-phase-design.md](agent-phase-design.md)。
 
 <!-- NEW_AGENT_START -->
-- 🔲 **047. LangGraph 核心：状态图与图编排 (StateGraph Fundamentals)**
-  - StateSchema 类型系统（MessagesValue/ReducedValue/UntrackedValue）、Graph API + Functional API 双范式、`task()` 持久化原语、`contextSchema` 运行时注入
+- ✅ **[047. LangGraph 核心：状态图与图编排 (StateGraph Fundamentals)](notes/047-langgraph-state-graph.md)**
+  - StateSchema 类型系统（MessagesValue/ReducedValue）、Graph API + Functional API 双范式、`task()` 持久化原语、`contextSchema` 运行时注入、替代 ToolCallingLoop 的显式状态图
 - 🔲 **048. 生产级 ReAct Agent (ReAct Agent with LangGraph)**
   - 自建 + `createReactAgent` prebuilt 双路径、2026 安全拦截 / 上下文压缩 / 替代思路评估、MCP 协议意识
 - 🔲 **049. 持久化执行与线程管理 (Durable Execution & Thread Lifecycle)**

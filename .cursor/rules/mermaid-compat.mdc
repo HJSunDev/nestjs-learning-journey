@@ -1,0 +1,52 @@
+---
+description: 在 Markdown 文档中编写 Mermaid 图表时的兼容性约束
+alwaysApply: false
+---
+# Mermaid 图表兼容性规范（目标版本：8.x）
+
+本项目的 Mermaid 预览环境为 **8.8.0**，编写图表时必须遵守以下约束。
+
+## 禁止使用的语法
+
+| 禁止语法 | 最低支持版本 | 替代方案 |
+|---------|------------|---------|
+| `---` 前置标题块（front matter） | v9.2+ | 用 Markdown 标题或加粗文字写在代码块外部 |
+| subgraph 内 `direction LR/TD` | v10+ | 去掉 direction，依赖外层 graph 方向 |
+| `~~~` 不可见连接线 | v10+ | 分行声明独立节点，不画连线 |
+| `stateDiagram-v2` | 部分 8.x 支持但不稳定 | 改用 `graph LR/TD` 模拟状态图 |
+
+## 安全可用的语法
+
+- `graph LR` / `graph TD`
+- `subgraph name[title]` ... `end`（不含 direction）
+- `-->` / `-->|label|` 有向边
+- `((圆形))` / `[矩形]` / `{菱形}` 节点形状
+- `A --> B` 基础连线
+
+## 复杂图的拆分原则
+
+当一张图包含多个逻辑分组时，**不要**用嵌套 subgraph + direction 实现，而是拆成多个独立的小图，每个图用 Markdown 标题分隔：
+
+```markdown
+❌ 错误：一个大图内嵌套多个 subgraph + direction
+❌ ```mermaid
+graph LR
+  subgraph A[分组A]
+    direction LR
+    ...
+  end
+❌ ```
+
+✅ 正确：拆成独立小图
+**分组 A**：
+✅ ```mermaid
+graph LR
+  A1 --> A2
+✅ ```
+
+**分组 B**：
+✅ ```mermaid
+graph LR
+  B1 --> B2
+✅ ```
+```
