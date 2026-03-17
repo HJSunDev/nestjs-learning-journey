@@ -139,46 +139,4 @@ export class AgentController {
       model: dto.model,
     });
   }
-
-  @Public()
-  @Post('graph/functional/chat')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: '图编排对话（Functional API）',
-    description:
-      '使用 LangGraph Functional API (entrypoint + task) 实现的工具调用循环。' +
-      '与 Graph API 版本功能等价，展示同一逻辑在过程式范式下的表达。' +
-      'task() 将副作用操作封装为可持久化单元，为 049 durable execution 做铺垫。',
-  })
-  @ApiResponse({
-    status: 200,
-    description: '函数式图编排对话成功',
-    type: GraphChatResponseDto,
-  })
-  async functionalGraphChat(
-    @Body() dto: GraphChatRequestDto,
-  ): Promise<GraphChatResponseDto> {
-    this.logger.log(
-      `[Functional] 函数式图编排对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
-    );
-
-    const result = await this.graphService.invokeFunctional({
-      provider: dto.provider,
-      model: dto.model,
-      messages: dto.messages,
-      systemPrompt: dto.systemPrompt,
-      toolNames: dto.tools,
-      maxIterations: dto.maxIterations,
-      temperature: dto.temperature,
-      maxTokens: dto.maxTokens,
-    });
-
-    return {
-      content: result.content,
-      iterationCount: result.iterationCount,
-      toolCallCount: result.toolCallCount,
-      usage: result.usage,
-      trace: result.trace,
-    };
-  }
 }

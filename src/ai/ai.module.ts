@@ -65,7 +65,6 @@ import { ResilienceService } from './resilience';
  * - AgentState:            共享 State 定义（StateSchema + MessagesValue + ReducedValue）
  * - callModelNode / executeToolsNode / shouldContinue: 共享图节点和条件路由
  * - buildToolGraph:        Graph API 版工具调用图构建器
- * - buildFunctionalToolAgent: Functional API 版工具调用 Agent
  *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）

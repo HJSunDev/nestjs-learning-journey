@@ -494,7 +494,11 @@ const result = await graph.invoke(
 );
 ```
 
-### 场景 C: Functional API — 过程式范式
+### 场景 C: Functional API — 过程式范式（概念参考）
+
+> **注意**：本项目代码库中未包含 Functional API 实现。
+> 生产环境中应选择一种范式并坚持使用，Graph API 是复杂 Agent 编排的首选。
+> 以下代码仅作为概念对比，帮助理解 LangGraph 的两种编程模型。
 
 ```typescript
 import { entrypoint, task } from '@langchain/langgraph';
@@ -550,27 +554,44 @@ const result = await graph.invoke(
 );
 ```
 
-### 场景 E: Graph 流式输出
+### 场景 E: Graph 流式输出（生产级双模式）
+
+生产环境使用 `streamMode: ['messages', 'updates']` 双模式叠加：
+- `'messages'`：AI 文本逐 token 流式（用户从第一个 token 就能看到输出）
+- `'updates'`：节点完成后推送结构化事件（tool_calls、tool_results）
 
 ```typescript
-// streamMode: 'updates' — 逐节点返回 State 增量
+// 双模式流式：token 级 AI 文本 + 节点级结构化事件
 const stream = await graph.stream(
   { messages },
-  { context, streamMode: 'updates' },
+  { context, streamMode: ['messages', 'updates'] },
 );
 
 for await (const chunk of stream) {
-  // chunk 格式: { [nodeName]: partialStateUpdate }
-  if (chunk.callModel) {
-    const aiMsg = chunk.callModel.messages[0];
-    if (aiMsg.tool_calls?.length) {
-      // → 发射 TOOL_CALL 事件
-    } else {
-      // → 发射 TEXT 事件（最终回复）
+  // streamMode 为数组时，chunk 是元组 [mode, data]
+  const [mode, data] = chunk;
+
+  if (mode === 'messages') {
+    // data: [AIMessageChunk, metadata]
+    // AIMessageChunk.content 是单个 token 的文本片段
+    const [msgChunk] = data;
+    if (msgChunk.content) {
+      // → 发射 TEXT 事件（逐 token）
     }
   }
-  if (chunk.executeTools) {
-    // → 发射 TOOL_RESULT 事件
+
+  if (mode === 'updates') {
+    // data: { [nodeName]: partialStateUpdate }
+    if (data.callModel) {
+      const aiMsg = data.callModel.messages[0];
+      if (aiMsg.tool_calls?.length) {
+        // → 发射 TOOL_CALL 事件（完整的工具调用信息）
+      }
+      // 不发射 TEXT — 文本已由 'messages' 模式逐 token 推送
+    }
+    if (data.executeTools) {
+      // → 发射 TOOL_RESULT 事件
+    }
   }
 }
 ```
@@ -626,6 +647,131 @@ graph TD
 
 LangGraph 选择 Pregel 作为底层引擎名称，是因为它借鉴了 Google Pregel 的执行模型。但 LangGraph 的 Pregel 是一个**简化版本**：Google 的 Pregel 面向大规模分布式图计算（数十亿节点），LangGraph 的 Pregel 面向 AI Agent 工作流编排（通常几个到几十个节点）。核心执行模型相同，但规模和场景不同。
 
+### 流式原理：AsyncGenerator 与 `for await...of`
+
+`graph.stream()` 返回的对象可以用 `for await (const chunk of stream)` 逐个消费——这背后依赖 JavaScript 的 **AsyncGenerator（异步生成器）** 协议。要理解它，需要从 Iterator → Generator → AsyncGenerator 逐步推进。
+
+#### 第一层：Iterator（迭代器协议）
+
+迭代器是一个实现了 `next()` 方法的对象。每次调用 `next()` 返回 `{ value, done }`：
+
+```typescript
+const iterator = {
+  current: 0,
+  next() {
+    if (this.current < 3) {
+      return { value: this.current++, done: false };
+    }
+    return { value: undefined, done: true };
+  },
+};
+
+iterator.next(); // { value: 0, done: false }
+iterator.next(); // { value: 1, done: false }
+iterator.next(); // { value: 2, done: false }
+iterator.next(); // { value: undefined, done: true }
+```
+
+`for...of` 循环就是不断调用 `next()` 直到 `done: true` 的语法糖。
+
+#### 第二层：Generator（生成器）
+
+手动实现迭代器很繁琐。Generator 用 `function*` + `yield` 简化了这个过程：
+
+```typescript
+function* countTo3() {
+  yield 0;  // 第 1 次 next() → 执行到这里暂停，返回 { value: 0, done: false }
+  yield 1;  // 第 2 次 next() → 执行到这里暂停，返回 { value: 1, done: false }
+  yield 2;  // 第 3 次 next() → 执行到这里暂停，返回 { value: 2, done: false }
+             // 第 4 次 next() → 函数结束，返回 { value: undefined, done: true }
+}
+
+for (const n of countTo3()) {
+  console.log(n); // 依次输出 0, 1, 2
+}
+```
+
+Generator 的关键特征：**`yield` 会暂停函数执行**，把值交给调用方；调用方再次调用 `next()` 时，函数从暂停点恢复执行。这是一种**惰性求值**——值不是一次性全部计算好，而是按需逐个产出。
+
+#### 第三层：AsyncGenerator（异步生成器）
+
+Generator 的 `yield` 是同步的——值必须立刻可用。但在 LangGraph 场景中，每个节点执行需要时间（LLM 调用可能耗时数秒）。**AsyncGenerator** 解决了这个问题：
+
+```typescript
+async function* streamNodes() {
+  // 第 1 次迭代：等待 callModel 执行完毕（可能耗时 2 秒）
+  const chunk1 = await callModel(state);
+  yield { callModel: chunk1 };
+
+  // 第 2 次迭代：等待 executeTools 执行完毕
+  const chunk2 = await executeTools(state);
+  yield { executeTools: chunk2 };
+
+  // 第 3 次迭代：等待 callModel 再次执行完毕
+  const chunk3 = await callModel(state);
+  yield { callModel: chunk3 };
+
+  // 函数结束，迭代器 done
+}
+
+// 用 for await...of 消费（注意比同步版本多了 await）
+for await (const chunk of streamNodes()) {
+  console.log(chunk);
+  // t=2s: { callModel: {...} }
+  // t=3s: { executeTools: {...} }
+  // t=5s: { callModel: {...} }
+}
+```
+
+`for await...of` 在每次迭代时会 **等待** `yield` 产出值——如果异步操作还没完成，循环就挂起；操作完成后，循环自动恢复，拿到新 chunk。
+
+#### `graph.stream()` 的实际工作方式
+
+`graph.stream()` 返回的是一个 `IterableReadableStream`，它实现了 `AsyncIterable` 协议（即拥有 `[Symbol.asyncIterator]()` 方法）。底层的 Pregel 引擎在执行时，每完成一个 Super-step 就 yield 一个 chunk：
+
+```
+graph.stream() 内部（简化逻辑）：
+
+async function* pregel引擎() {
+  while (还有节点需要执行) {
+    // ---- Super-step 开始 ----
+    const results = await 并发执行当前轮被激活的节点();
+    const newState = 用Reducer合并(currentState, results);
+    currentState = newState;
+
+    yield { [完成的节点名]: 该节点的Partial更新 };  // ← chunk 产出点
+
+    下一轮要激活的节点 = 根据边定义路由(newState);
+    // ---- Super-step 结束 ----
+  }
+}
+```
+
+对应到 `graph.service.ts` 中的消费端：
+
+```typescript
+const stream = await this.toolGraph.stream(
+  { messages },
+  { context, callbacks: [tracer], streamMode: ['messages', 'updates'] },
+);
+
+// for await...of 驱动 Pregel 引擎逐步执行：
+// 'messages' 模式在节点执行期间逐 token 推送 AI 输出
+// 'updates' 模式在 Super-step 完成后推送节点级状态增量
+for await (const chunk of stream) {
+  const [mode, data] = chunk;
+  if (mode === 'messages') this.processMessagesChunk(data, subscriber);
+  if (mode === 'updates') this.processUpdatesChunk(data, subscriber);
+}
+```
+
+整条链路（双模式）：
+
+- **'messages' 路径**：callModel 节点执行中 → 模型流式生成 token → LangGraph 拦截回调 → yield `['messages', [AIMessageChunk, metadata]]` → `processMessagesChunk` 发射 TEXT 事件 → SSE 逐 token 推送给客户端
+- **'updates' 路径**：节点执行完成 → Pregel 引擎完成 Super-step → yield `['updates', { nodeName: stateUpdate }]` → `processUpdatesChunk` 发射 TOOL_CALL / TOOL_RESULT 事件
+
+两种模式交替产出 chunk，`for await...of` 统一消费，实时按需推送。
+
 ### Graph API vs Functional API
 
 | 维度       | Graph API                                        | Functional API             |
@@ -672,6 +818,86 @@ NestJS DI 容器                    LangGraph 图运行时
 | 持久化   | 不支持                           | 支持（049 章节的 checkpointer）          |
 | 流式粒度 | 中间轮用 invoke，最终轮用 stream | 所有节点统一通过 graph.stream("updates") |
 | 定位     | 轻量级工具调用（简单场景仍有效） | Agent 级别编排（生产级复杂场景）         |
+
+### 流式架构演进：从 Subject 到 Cold Observable + Subscriber
+
+#### 之前的模式（041-046 LCEL 阶段）
+
+LCEL 阶段的所有流式接口都用 `Subject` 作为"流式通道"：
+
+```typescript
+streamChat(dto): Observable<StreamChunk> {
+  const subject = new Subject<StreamChunk>();
+  void this.executeStream(chain, subject);  // fire-and-forget 异步操作
+  return subject.asObservable();            // 对外暴露只读 Observable
+}
+```
+
+`Subject` 兼具 Observable（被订阅）和 Observer（发射数据）两种角色：
+
+```
+executeStream() ──subject.next()──▶ Subject ──subscribe──▶ Adapter ──res.write──▶ 客户端
+                  (写入端 Observer)           (读取端 Observable)
+```
+
+这个模式简单直观，但有一个问题：**客户端断开连接后，异步操作不会停止**。Adapter 调用 `subscription.unsubscribe()` 只是移除了自己这个订阅者，`executeStream` 仍在后台运行。对于 LCEL 单次链式调用（通常 1 次 LLM 调用、几秒完成），这个资源泄漏可以接受。
+
+#### 047 的问题：Agent 循环放大了泄漏
+
+StateGraph 的工具调用循环可能包含 3-5 轮 LLM 调用，每轮都消耗 token 和时间。如果客户端在第 1 轮就断开了，后续 4 轮 LLM 调用全是浪费。必须支持"取消"。
+
+#### 新模式：Cold Observable + Subscriber + AbortController
+
+```typescript
+streamGraph(params): Observable<StreamChunk> {
+  return new Observable<StreamChunk>((subscriber) => {
+    const abortController = new AbortController();
+    void this.runGraphStream(params, subscriber, abortController.signal);
+    return () => abortController.abort();  // teardown：取消时中止图执行
+  });
+}
+```
+
+关键变化：
+
+**1. `new Observable(factory)` — Cold Observable**
+
+Observable 的工厂函数只在有人 `subscribe()` 时才执行。与 Subject（创建即开始）不同，Cold Observable 实现了"按需启动"。工厂函数接收一个 `subscriber` 参数，它就是订阅者本身。
+
+**2. `subscriber` — 它是什么？**
+
+`Subscriber` 是 RxJS 内部类，实现了 `Observer` 接口（`next()` / `error()` / `complete()`）。当 Adapter 调用 `stream$.subscribe({ next, error, complete })` 时，RxJS 将这三个回调包装成一个 `Subscriber` 实例，传入工厂函数。
+
+简单说：**`subscriber` 就是 Adapter 那边的 `{ next, error, complete }` 回调的封装**。调用 `subscriber.next(chunk)` 等价于直接调用 Adapter 的 `next` 回调，数据零中转地到达 `res.write()`。
+
+对比 Subject 模式需要两跳（`subject.next() → subscriber.next()`），直接用 Subscriber 只需一跳。
+
+**3. `return () => abort()` — Teardown 函数**
+
+工厂函数返回的函数叫 teardown（清理函数）。当 `subscription.unsubscribe()` 被调用时（客户端断开），RxJS 自动执行这个 teardown。这就把"取消订阅"和"中止图执行"绑定在一起了。
+
+**完整取消链路：**
+
+```
+客户端断开
+  → res.on('close')
+    → subscription.unsubscribe()
+      → teardown() 执行
+        → abortController.abort()
+          → signal.aborted = true
+            → for await 循环检测到 signal.aborted → break
+            → LangGraph 内部收到 signal → 停止后续节点执行
+```
+
+**4. 为什么不继续用 Subject？**
+
+| 维度       | Subject 模式                    | Cold Observable + Subscriber 模式     |
+| ---------- | ------------------------------- | ------------------------------------- |
+| 数据跳转   | 两跳：subject → subscriber     | 一跳：直接写入 subscriber             |
+| 启动时机   | 创建即启动（Hot）               | subscribe 时启动（Cold）              |
+| 取消支持   | 无法通知生产者停止              | teardown 自动触发 abort               |
+| 封装性     | asObservable() 隐藏写入端      | 工厂函数天然封闭，外部无法写入        |
+| 适用场景   | 单次快速操作（LCEL 链式调用）   | 长时间多轮操作（Agent 图编排）        |
 
 ## 4. 最佳实践与坑 (Best Practices & Pitfalls)
 
@@ -855,34 +1081,7 @@ export function buildToolGraph() {
 }
 ```
 
-### Step 5: 构建 Functional API Agent
-
-**这一步在干什么**: 用 `entrypoint` + `task` 过程式范式实现等价逻辑。`task()` 将 LLM 调用和工具执行封装为可持久化单元。
-
-文件：`src/ai/agents/single/tool-graph/functional-tool-agent.ts`
-
-```typescript
-import { entrypoint, task } from '@langchain/langgraph';
-
-const callModelTask = task('callModel', async (params) => {
-  // 调用 LLM（bindTools 后）
-  return aiMessage;
-});
-
-const executeToolsTask = task('executeTools', async (params) => {
-  // 执行工具调用
-  return toolMessages;
-});
-
-export function buildFunctionalToolAgent() {
-  return entrypoint({ name: 'functionalToolAgent' }, async (input) => {
-    // while 循环 + task 调用
-    // 与 Graph API 功能等价，但用过程式代码表达
-  });
-}
-```
-
-### Step 6: 创建 GraphService（NestJS 桥接层）
+### Step 5: 创建 GraphService（NestJS 桥接层）
 
 **这一步在干什么**: 在 NestJS DI 体系中管理编译后的图实例，将 `AiModelFactory` 和 `ToolRegistry` 的产出通过 `context` 注入图运行时。
 
@@ -892,7 +1091,6 @@ export function buildFunctionalToolAgent() {
 @Injectable()
 export class GraphService {
   private readonly toolGraph: ToolGraphCompiled;
-  private readonly functionalAgent: FunctionalToolAgent;
 
   constructor(
     private readonly modelFactory: AiModelFactory,
@@ -901,7 +1099,6 @@ export class GraphService {
   ) {
     // 图在构造时编译一次，运行时通过 context 切换 model/tools
     this.toolGraph = buildToolGraph();
-    this.functionalAgent = buildFunctionalToolAgent();
   }
 
   async invokeGraph(params: GraphInvokeParams): Promise<GraphInvokeResult> {
@@ -916,14 +1113,18 @@ export class GraphService {
     // 提取最终 AIMessage 作为响应
   }
 
-  streamGraph(params: GraphInvokeParams): Subject<StreamChunk> {
-    // 使用 graph.stream({ ... }, { context, streamMode: 'updates' })
-    // 将节点事件映射到 StreamChunk 协议
+  streamGraph(params: GraphInvokeParams): Observable<StreamChunk> {
+    return new Observable((subscriber) => {
+      const abortController = new AbortController();
+      void this.runGraphStream(params, subscriber, abortController.signal);
+      // teardown：客户端断开时中止图执行
+      return () => abortController.abort();
+    });
   }
 }
 ```
 
-### Step 7: 注册端点并验证
+### Step 6: 注册端点并验证
 
 **这一步在干什么**: 创建独立的 `AgentController`（路由前缀 `ai/agent`），在 `AiModule` 注册 `AgentController` 和 `GraphService`。
 
@@ -937,7 +1138,6 @@ Agent 阶段与 LCEL 阶段职责边界清晰：
 
 - `POST /ai/agent/graph/chat` — Graph API 非流式
 - `POST /ai/agent/graph/chat/stream` — Graph API 流式 SSE
-- `POST /ai/agent/graph/functional/chat` — Functional API 非流式
 
 验证请求体（与 043 工具调用请求一致的字段）：
 

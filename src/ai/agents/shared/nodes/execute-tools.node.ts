@@ -65,6 +65,7 @@ export const executeToolsNode: GraphNode<AgentStateType> = async (
         new ToolMessage({
           content: `工具 "${toolCall.name}" 不存在，可用工具: ${ctx.tools.map((t) => t.name).join(', ')}`,
           tool_call_id: callId,
+          name: toolCall.name,
         }),
       );
       continue;
@@ -80,6 +81,7 @@ export const executeToolsNode: GraphNode<AgentStateType> = async (
         new ToolMessage({
           content: typeof result === 'string' ? result : JSON.stringify(result),
           tool_call_id: callId,
+          name: toolCall.name,
         }),
       );
     } catch (error) {
@@ -90,6 +92,7 @@ export const executeToolsNode: GraphNode<AgentStateType> = async (
         new ToolMessage({
           content: `工具 "${toolCall.name}" 执行出错: ${message}`,
           tool_call_id: callId,
+          name: toolCall.name,
         }),
       );
     }

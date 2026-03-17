@@ -1,0 +1,135 @@
+---
+description: 函数文档注释的结构化格式规范（JSDoc / TSDoc）
+globs: **/*.ts
+alwaysApply: false
+---
+
+# 函数文档注释规范 (Function Documentation Standard)
+
+## 核心标签
+
+| 标签 | 说明 |
+|------|------|
+| `@param` | 每个参数一行，描述语义与约束（TypeScript 类型已在签名中，不必重复类型本身） |
+| `@returns` | 返回值的语义和结构 |
+| `@throws` | 当函数可能抛出异常时必须标注，说明异常类型和触发条件 |
+| `@example` | 展示完整的调用过程，包含入参构造 → 函数调用 → 返回结果 |
+
+## 分层要求
+
+根据函数的**可见性**和**复杂度**分层，避免过度文档化：
+
+### 第一层：公开 API（`export function` / `public` 方法 / Controller 端点）
+
+全部标签必填：`@param` + `@returns` + `@throws`（如有） + `@example`
+
+### 第二层：`protected` / `private` 方法 + 包含分支逻辑或数据转换
+
+必填：`@param` + `@returns` + `@throws`（如有），`@example` 推荐但非强制
+
+### 第三层：可跳过完整文档的场景
+
+- 单行委托调用（如 `return this.service.doSomething(x)`）
+- 简单 getter / setter
+- 逻辑极简且签名已自解释的方法
+
+这类方法写一行概要即可，无需 `@param` / `@returns` / `@example`。
+
+## `@example` 书写规范
+
+用中文标签将示例分为三段：**参数示例 → 调用示例 → 返回值示例**，结构清晰，一目了然。
+
+```typescript
+/**
+ * 将 API 消息格式转为 LangChain BaseMessage[]
+ *
+ * @param messages - 用户级消息数组（符合内部 Message 接口）
+ * @param systemPrompt - 可选系统提示词，提供时作为首条 SystemMessage 插入
+ * @returns LangChain BaseMessage[]，可直接作为状态图的初始输入
+ *
+ * @example
+ * // 参数示例
+ * const messages = [
+ *   { role: 'user', content: '天气怎么样？' },
+ *   { role: 'assistant', content: '我来查询。' },
+ * ];
+ * const systemPrompt = '你是一个有用的助手';
+ *
+ * // 调用示例
+ * const result = buildMessages(messages, systemPrompt);
+ *
+ * // 返回值示例
+ * // [
+ * //   SystemMessage { content: '你是一个有用的助手' },
+ * //   HumanMessage { content: '天气怎么样？' },
+ * //   AIMessage { content: '我来查询。' },
+ * // ]
+ */
+```
+
+有多种使用场景时，用多个 `@example` 分别展示：
+
+```typescript
+/**
+ * @example
+ * // 参数示例（不带 system prompt）
+ * const messages = [{ role: 'user', content: '你好' }];
+ *
+ * // 调用示例
+ * const result = buildMessages(messages);
+ *
+ * // 返回值示例
+ * // [HumanMessage { content: '你好' }]
+ *
+ * @example
+ * // 参数示例（带 system prompt）
+ * const messages = [{ role: 'user', content: '你好' }];
+ * const systemPrompt = '你是助手';
+ *
+ * // 调用示例
+ * const result = buildMessages(messages, systemPrompt);
+ *
+ * // 返回值示例
+ * // [SystemMessage { content: '你是助手' }, HumanMessage { content: '你好' }]
+ */
+```
+
+## `@throws` 示例
+
+NestJS 服务方法尤其需要标注异常，因为它直接影响 HTTP 响应码：
+
+```typescript
+/**
+ * 校验模型是否支持 tool calling
+ *
+ * @param provider - AI 提供商标识
+ * @param modelId - 模型 ID
+ * @throws {BadRequestException} 当模型明确不支持 tool calling 时抛出
+ */
+```
+
+## 常见错误
+
+```typescript
+// ❌ 只有参数示例，缺少调用示例和返回值示例
+/**
+ * @example
+ * const messages = [{ role: 'user', content: '你好' }];
+ * const systemPrompt = '你是助手';
+ */
+
+// ❌ 只有调用，没有参数示例和返回值示例
+/**
+ * @example
+ * buildMessages(messages, prompt);
+ */
+
+// ❌ 对单行委托写了比函数体还长的注释（属于第三层，一行概要即可）
+/**
+ * @param messages - ...（15行注释）
+ * @example ...（又10行）
+ */
+private buildMessages(m: Message[], s?: string): BaseMessage[] {
+  return convertToLangChainMessages(m, s);
+}
+```
