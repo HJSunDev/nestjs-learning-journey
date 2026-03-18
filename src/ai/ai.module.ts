@@ -11,6 +11,7 @@ import { ReasoningNormalizer } from './normalizers/reasoning.normalizer';
 import { AgentRegistry } from './agents/agent.registry';
 import { AgentController } from './agents/agent.controller';
 import { GraphService } from './agents/graph.service';
+import { ReactService } from './agents/react.service';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
@@ -66,6 +67,12 @@ import { ResilienceService } from './resilience';
  * - callModelNode / executeToolsNode / shouldContinue: 共享图节点和条件路由
  * - buildToolGraph:        Graph API 版工具调用图构建器
  *
+ * 048 新增 ReAct Agent 层：
+ * - ReactService:          ReAct 智能体服务（双模式：自建图 + createReactAgent 预构建）
+ * - ReAct 提示词:          引导 Thought → Action → Observation 循环的系统提示词
+ * - 输入安全守卫:          Prompt Injection 检测 + 消息长度/数量限制
+ * - buildPrebuiltReactAgent: createReactAgent 预构建封装
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -93,6 +100,7 @@ import { ResilienceService } from './resilience';
     DocumentProcessor,
     ResilienceService,
     GraphService,
+    ReactService,
   ],
   exports: [
     AiService,
@@ -110,6 +118,7 @@ import { ResilienceService } from './resilience';
     DocumentProcessor,
     ResilienceService,
     GraphService,
+    ReactService,
   ],
 })
 export class AiModule {}

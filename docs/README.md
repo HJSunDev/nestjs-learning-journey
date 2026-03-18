@@ -124,8 +124,8 @@
 <!-- NEW_AGENT_START -->
 - ✅ **[047. LangGraph 核心：状态图与图编排 (StateGraph Fundamentals)](notes/047-langgraph-state-graph.md)**
   - StateSchema 类型系统（MessagesValue/ReducedValue）、Graph API 声明式图编排、`contextSchema` 运行时注入、替代 ToolCallingLoop 的显式状态图
-- 🔲 **048. 生产级 ReAct Agent (ReAct Agent with LangGraph)**
-  - 自建 + `createReactAgent` prebuilt 双路径、2026 安全拦截 / 上下文压缩 / 替代思路评估、MCP 协议意识
+- ✅ **[048. 生产级 ReAct Agent (ReAct Agent with LangGraph)](notes/048-react-agent.md)**
+  - 自建图 + createReactAgent 预构建双模式、ReAct 提示词工程、输入安全守卫（Prompt Injection 防护）、MCP 协议意识
 - 🔲 **049. 持久化执行与线程管理 (Durable Execution & Thread Lifecycle)**
   - Durable Execution 三模式（sync/async/exit）、`task()` 持久化语义与幂等性、Super-step 与 Checkpoint、PostgresSaver 生产集成、Time-travel 调试
 - 🔲 **050. 人机协同模式 (Human-in-the-Loop Patterns)**
