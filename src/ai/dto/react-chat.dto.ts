@@ -132,6 +132,7 @@ export class ReactChatRequestDto {
  * @example
  * {
  *   content: '北京现在天气晴朗，温度25°C。当前时间是15:30。',
+ *   reasoning: '先获取北京天气，再获取当前时间，最后整合回答。',
  *   iterationCount: 3,
  *   toolCallCount: 2,
  *   usage: { promptTokens: 500, completionTokens: 200, totalTokens: 700 },
@@ -144,6 +145,13 @@ export class ReactChatResponseDto {
     example: '北京现在天气晴朗，温度25°C。当前时间是15:30。',
   })
   content: string;
+
+  @ApiPropertyOptional({
+    description: '模型返回的思考/推理内容（模型支持时才会返回）',
+    example:
+      '先分别获取北京和上海的天气，再对比温度、天气状况和空气质量，最后给出户外运动建议。',
+  })
+  reasoning?: string;
 
   @ApiProperty({
     description: 'ReAct 迭代次数（Thought-Action-Observation 循环次数）',

@@ -55,6 +55,17 @@ Follow the ReAct (Reasoning + Acting) approach for every request:
  */
 export function buildReactPrompt(basePrompt?: string): string {
   const prompt = basePrompt ?? REACT_SYSTEM_PROMPT;
-  const now = new Date().toISOString();
-  return `${prompt}\n\nCurrent time: ${now}`;
+  // 获取当前北京时间（UTC+8），格式如 "2026/03/19 22:30:00"
+  // 注：IANA 时区数据库中，中国标准时间标识符为 Asia/Shanghai
+  const now = new Date().toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  return `${prompt}\n\nCurrent time (Asia/Shanghai): ${now}`;
 }

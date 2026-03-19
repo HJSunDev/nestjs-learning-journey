@@ -190,6 +190,7 @@ export class AgentController {
 
     return {
       content: result.content,
+      reasoning: result.reasoning,
       iterationCount: result.iterationCount,
       toolCallCount: result.toolCallCount,
       usage: result.usage,

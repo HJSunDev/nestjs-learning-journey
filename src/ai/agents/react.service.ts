@@ -10,6 +10,7 @@ import { Observable, type Subscriber } from 'rxjs';
 
 import { AiModelFactory } from '../factories/model.factory';
 import { ToolRegistry } from '../tools/tool.registry';
+import { ReasoningNormalizer } from '../normalizers/reasoning.normalizer';
 import { LangChainTracer } from '../observability';
 import { AiProvider, StreamChunkType } from '../constants';
 import { MODEL_REGISTRY } from '../constants/model-registry';
@@ -41,6 +42,7 @@ export interface ReactInvokeParams {
  */
 export interface ReactInvokeResult {
   content: string;
+  reasoning?: string;
   iterationCount: number;
   toolCallCount: number;
   usage?: {
@@ -79,6 +81,7 @@ export class ReactService {
     private readonly modelFactory: AiModelFactory,
     private readonly toolRegistry: ToolRegistry,
     private readonly configService: ConfigService,
+    private readonly reasoningNormalizer: ReasoningNormalizer,
   ) {
     this.graph = buildToolGraph();
     this.logger.log('ReAct Agent graph 已编译完成');
@@ -103,10 +106,14 @@ export class ReactService {
    * @throws {BadRequestException} 当模型不支持 tool calling 或输入不安全时
    */
   async invoke(params: ReactInvokeParams): Promise<ReactInvokeResult> {
+    // 校验模型是否支持 tool calling
     this.validateToolCallingSupport(params.provider, params.model);
+    // 校验输入是否安全
     validateInput(params.messages);
 
+    // 创建链路追踪器
     const tracer = new LangChainTracer(this.logger);
+    // 获取最大迭代次数
     const maxIterations = params.maxIterations ?? 5;
 
     this.logger.log(
@@ -121,19 +128,22 @@ export class ReactService {
     });
 
     const tools = this.toolRegistry.getTools(params.toolNames);
+    // 构建 ReAct 消息列表,包含 ReAct 系统提示词
     const messages = this.buildReactMessages(
       params.messages,
       params.systemPrompt,
     );
 
+    // 构建工具调用图的上下文
     const context: ToolGraphContext = { model, tools, maxIterations };
 
+    // 执行 ReAct 图
     const result = await this.graph.invoke(
       { messages },
       { context, callbacks: [tracer] },
     );
 
-    return this.buildResult(result, tracer);
+    return this.buildResult(result, tracer, params.provider);
   }
 
   // ============================================================
@@ -177,6 +187,7 @@ export class ReactService {
   ): Promise<void> {
     const tracer = new LangChainTracer(this.logger);
     const startTime = Date.now();
+    // 获取最大迭代次数
     const maxIterations = params.maxIterations ?? 5;
 
     try {
@@ -209,7 +220,7 @@ export class ReactService {
 
         const [streamMode, data] = chunk as [string, unknown];
         if (streamMode === 'messages') {
-          this.processMessagesChunk(data, subscriber);
+          this.processMessagesChunk(data, params.provider, subscriber);
         } else if (streamMode === 'updates') {
           this.processUpdatesChunk(data as Record<string, unknown>, subscriber);
         }
@@ -226,15 +237,35 @@ export class ReactService {
   // ============================================================
 
   /**
-   * 处理 'messages' 模式 — token 级文本流
+   * 处理 'messages' 流式模式 — token 级文本流
+   *
+   * StateGraph.stream() 的 'messages' 模式会发射 [AIMessageChunk, metadata] 元组，
+   * 每个 chunk 包含模型生成的一小段文本（通常 1-5 个 token）。
+   *
+   * 此方法从元组中提取 AIMessageChunk 的文本内容，发射 TEXT 事件供前端实时渲染。
+   *
+   * @param data - 流式数据，格式为 [AIMessageChunk, metadata]
+   * @param subscriber - RxJS 订阅者，用于发射事件
    */
   private processMessagesChunk(
     data: unknown,
+    provider: string,
     subscriber: Subscriber<StreamChunk>,
   ): void {
     const [message] = data as [BaseMessage, unknown];
 
     if (message instanceof AIMessageChunk) {
+      const reasoning = this.reasoningNormalizer.extractReasoning(
+        provider,
+        message as unknown as Record<string, unknown>,
+      );
+      if (reasoning) {
+        subscriber.next({
+          type: StreamChunkType.REASONING,
+          content: reasoning,
+        });
+      }
+
       const content =
         typeof message.content === 'string' ? message.content : '';
       if (content) {
@@ -260,7 +291,19 @@ export class ReactService {
   }
 
   /**
-   * 从 callModel 节点更新中提取 tool_calls 并发射 TOOL_CALL 事件
+   * 从 StateGraph 流式更新中提取模型发出的工具调用请求
+   *
+   * 当 callModel 节点执行完毕后，StateGraph 会发射形如
+   * { callModel: { messages: [AIMessage] } } 的更新块。
+   * AIMessage 中的 tool_calls 字段包含模型决定调用的工具列表。
+   *
+   * 流程：
+   * 1. 检查 chunk 是否包含 callModel 节点的更新
+   * 2. 获取 messages 数组的最后一条（即模型最新响应）
+   * 3. 若为 AIMessage 且含 tool_calls，逐个发射 TOOL_CALL 事件
+   *
+   * @param chunk - StateGraph 流式更新块
+   * @param subscriber - RxJS 订阅者，用于发射事件
    */
   private extractToolCalls(
     chunk: Record<string, unknown>,
@@ -268,6 +311,8 @@ export class ReactService {
   ): void {
     if (!chunk['callModel']) return;
 
+    // StateGraph 流式更新格式: { 节点名: { 更新字段 } }
+    // 例如: { callModel: { messages: [AIMessage] } }
     const update = chunk['callModel'] as Record<string, unknown>;
     const messages = update['messages'] as BaseMessage[] | undefined;
     const lastMsg = messages?.[messages.length - 1];
@@ -289,7 +334,20 @@ export class ReactService {
   }
 
   /**
-   * 从 executeTools 节点更新中提取工具结果并发射 TOOL_RESULT 事件
+   * 从 StateGraph 流式更新中提取工具执行结果
+   *
+   * 当 executeTools 节点执行完毕后，StateGraph 会发射形如
+   * { executeTools: { messages: [ToolMessage, ...] } } 的更新块。
+   * 此方法解析该结构，将每个 ToolMessage 转换为 TOOL_RESULT 事件发射给前端。
+   *
+   * 流程：
+   * 1. 检查 chunk 是否包含 executeTools 节点的更新
+   * 2. 从更新中提取 messages 数组
+   * 3. 过滤出 ToolMessage 实例（排除其他消息类型）
+   * 4. 发射 TOOL_RESULT 事件，包含工具名、调用 ID 和执行结果
+   *
+   * @param chunk - StateGraph 流式更新块
+   * @param subscriber - RxJS 订阅者，用于发射事件
    */
   private extractToolResults(
     chunk: Record<string, unknown>,
@@ -297,7 +355,10 @@ export class ReactService {
   ): void {
     if (!chunk['executeTools']) return;
 
+    // StateGraph 流式更新格式: { 节点名: { 更新字段 } }
+    // 例如: { executeTools: { messages: [ToolMessage] } }
     const update = chunk['executeTools'] as Record<string, unknown>;
+    // 从更新中提取 messages 数组
     const messages = update['messages'] as BaseMessage[] | undefined;
 
     if (messages) {
@@ -333,13 +394,20 @@ export class ReactService {
   private buildResult(
     result: Record<string, unknown>,
     tracer: LangChainTracer,
+    provider: string,
   ): ReactInvokeResult {
     const traceSummary = tracer.logSummary();
     const messages = result['messages'] as BaseMessage[];
     const lastMessage = messages[messages.length - 1];
 
+    const normalized = this.reasoningNormalizer.normalize(
+      provider,
+      lastMessage as unknown as Record<string, unknown>,
+    );
+
     return {
-      content: this.extractContent(lastMessage),
+      content: normalized.content,
+      reasoning: normalized.reasoning ?? undefined,
       iterationCount: (result['iterationCount'] as number) ?? 0,
       toolCallCount: (result['toolCallCount'] as number) ?? 0,
       usage: this.extractUsage(lastMessage),
@@ -366,7 +434,9 @@ export class ReactService {
     messages: Message[],
     customSystemPrompt?: string,
   ): BaseMessage[] {
+    // 构建 ReAct 系统提示词，带有时间上下文，字符串类型
     const systemPrompt = buildReactPrompt(customSystemPrompt);
+    // 将消息列表转换为 LangChain 消息列表
     return convertToLangChainMessages(messages, systemPrompt);
   }
 
@@ -395,11 +465,32 @@ export class ReactService {
     }
   }
 
+  /**
+   * 从消息中提取文本内容
+   *
+   * LangChain 的 BaseMessage.content 类型可能是：
+   * - string：纯文本消息，直接返回
+   * - Array：多模态内容（如文本 + 图片），需序列化为字符串
+   *
+   * @param message - LangChain 消息对象
+   * @returns 消息的文本内容
+   */
   private extractContent(message: BaseMessage): string {
     if (typeof message.content === 'string') return message.content;
     return JSON.stringify(message.content);
   }
 
+  /**
+   * 从模型响应消息中提取 token 使用统计信息
+   *
+   * LangChain 的 AIMessage 包含 usage_metadata 字段，记录本次调用的 token 消耗：
+   * - input_tokens：输入 token 数（包括 system prompt + 历史消息 + 用户输入）
+   * - output_tokens：输出 token 数（模型生成的回复）
+   * - total_tokens：总 token 数
+   *
+   * @param message - 模型返回的消息（通常为 AIMessage）
+   * @returns token 使用统计，如果消息不含 usage_metadata 则返回 undefined
+   */
   private extractUsage(
     message: BaseMessage,
   ): ReactInvokeResult['usage'] | undefined {

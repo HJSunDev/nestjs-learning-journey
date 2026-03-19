@@ -18,6 +18,13 @@ export interface ToolGraphContext {
   tools: StructuredToolInterface[];
   /** 最大迭代次数 */
   maxIterations: number;
+  /**
+   * 工具调用执行策略
+   *
+   * - 'parallel'（默认）：所有 tool_calls 并行执行，适用于独立工具（查天气 + 算数学）
+   * - 'sequential'：按模型输出顺序逐个执行，适用于有状态操作（浏览器自动化、表单填写、有序 API 调用）
+   */
+  toolCallStrategy?: 'parallel' | 'sequential';
 }
 
 /**
@@ -66,6 +73,7 @@ export const callModelNode: GraphNode<AgentStateType> = async (
         ? response.content
         : JSON.stringify(response.content),
     tool_calls: response.tool_calls,
+    additional_kwargs: response.additional_kwargs,
     response_metadata: response.response_metadata,
     usage_metadata: response.usage_metadata,
   });

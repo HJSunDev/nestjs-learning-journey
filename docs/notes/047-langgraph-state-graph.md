@@ -948,6 +948,8 @@ export type AgentStateType = typeof AgentState;
 
 文件：`src/ai/agents/shared/nodes/call-model.node.ts`
 
+> **跨章更新**：048 章在 `ToolGraphContext` 中新增了 `toolCallStrategy?: 'parallel' | 'sequential'` 字段，用于控制 `executeToolsNode` 的工具执行策略。以下为 047 章的原始定义。
+
 ```typescript
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
@@ -985,6 +987,12 @@ export const callModelNode: GraphNode<AgentStateType> = async (state, config) =>
 ```
 
 文件：`src/ai/agents/shared/nodes/execute-tools.node.ts`
+
+> **跨章更新**：048 章对此文件做了两项增强：
+> 1. `ToolGraphContext` 新增 `toolCallStrategy?: 'parallel' | 'sequential'` 字段
+> 2. `executeToolsNode` 重构为 parallel/sequential 双策略执行，抽取 `invokeSingleTool` 统一单工具执行逻辑
+>
+> 以下为 047 章的原始实现（串行 `for...of`），实际代码已在 048 章中演进。
 
 ```typescript
 import type { StructuredToolInterface } from '@langchain/core/tools';

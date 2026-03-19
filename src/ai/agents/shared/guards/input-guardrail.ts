@@ -56,6 +56,7 @@ const logger = new Logger('InputGuardrail');
 export function validateInput(
   messages: Array<{ role: string; content: string }>,
 ): void {
+  // 如果消息数量超过最大限制，则抛出异常
   if (messages.length > MAX_MESSAGE_COUNT) {
     throw new BadRequestException(
       `消息数量超限：最多 ${MAX_MESSAGE_COUNT} 条，收到 ${messages.length} 条`,
@@ -63,6 +64,7 @@ export function validateInput(
   }
 
   for (const msg of messages) {
+    // 如果消息内容字符长度超过最大限制，则抛出异常
     if (msg.content.length > MAX_MESSAGE_LENGTH) {
       throw new BadRequestException(
         `消息内容过长：单条最多 ${MAX_MESSAGE_LENGTH} 字符，收到 ${msg.content.length} 字符`,
@@ -72,6 +74,7 @@ export function validateInput(
     // 仅对用户消息做注入检测
     if (msg.role === 'user') {
       const result = detectInjection(msg.content);
+      // 如果检测到注入模式，则抛出异常
       if (!result.passed) {
         logger.warn(`Prompt Injection 检测触发: ${result.reason}`);
         throw new BadRequestException(`输入被安全策略拦截: ${result.reason}`);
