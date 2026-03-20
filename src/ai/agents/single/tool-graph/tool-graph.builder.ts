@@ -1,4 +1,5 @@
 import { StateGraph, START, END } from '@langchain/langgraph';
+import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
 import * as z from 'zod';
 
 import { AgentState } from '../../shared/states/agent.state';
@@ -57,11 +58,16 @@ const ContextSchema = z.object({
  * - 每个节点是独立的、可观测的执行单元
  * - 条件路由是显式声明的，而非隐藏在 if/else 中
  * - 图级别的 streaming events 可精确到节点粒度
- * - 后续可加入 checkpointer 实现断点续传（049 章节）
+ * - 传入 checkpointer 后，每个 super-step 边界自动保存 checkpoint（049 Durable Execution）
  *
+ * @param options - 可选的编译选项
+ * @param options.checkpointer - BaseCheckpointSaver 实例（PostgresSaver / MemorySaver），
+ *   传入后图具备断点续传、Time-travel、状态回溯能力
  * @returns 编译后的 CompiledStateGraph 实例
  */
-export function buildToolGraph() {
+export function buildToolGraph(options?: {
+  checkpointer?: BaseCheckpointSaver;
+}) {
   // 创建一个 StateGraph 实例，使用 AgentState 作为状态模式，使用 ContextSchema 作为运行时配置
   const graph = new StateGraph(AgentState, ContextSchema)
     // 注册 callModel 节点
@@ -80,8 +86,10 @@ export function buildToolGraph() {
     // 创建一条 无条件边：executeTools 节点执行完后，回到 callModel 节点
     .addEdge('executeTools', 'callModel');
 
-  // 编译图，生成可执行的图实例
-  return graph.compile();
+  // 编译图，传入 checkpointer 时启用持久化（每个 super-step 边界自动保存 checkpoint）
+  return graph.compile({
+    checkpointer: options?.checkpointer,
+  });
 }
 
 /**

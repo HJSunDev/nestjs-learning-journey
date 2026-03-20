@@ -22,3 +22,6 @@ export {
   type ToolGraphContext,
 } from './shared/nodes';
 export { validateInput, type GuardrailResult } from './shared/guards';
+
+export { CheckpointService, ThreadService } from './persistence';
+export type { ThreadStateSnapshot, SerializedMessage } from './persistence';

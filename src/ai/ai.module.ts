@@ -12,6 +12,7 @@ import { AgentRegistry } from './agents/agent.registry';
 import { AgentController } from './agents/agent.controller';
 import { GraphService } from './agents/graph.service';
 import { ReactService } from './agents/react.service';
+import { CheckpointService, ThreadService } from './agents/persistence';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
@@ -73,6 +74,11 @@ import { ResilienceService } from './resilience';
  * - 输入安全守卫:          Prompt Injection 检测 + 消息长度/数量限制
  * - buildPrebuiltReactAgent: createReactAgent 预构建封装
  *
+ * 049 新增 Durable Execution 持久化层：
+ * - CheckpointService:     PostgresSaver 生命周期管理（初始化表结构、提供 checkpointer 实例）
+ * - ThreadService:          线程状态查询、checkpoint 历史回溯、Time-travel 分叉
+ * - ReactService 扩展:     invokeWithThread/streamWithThread 线程感知的持久化执行
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -101,6 +107,8 @@ import { ResilienceService } from './resilience';
     ResilienceService,
     GraphService,
     ReactService,
+    CheckpointService,
+    ThreadService,
   ],
   exports: [
     AiService,
@@ -119,6 +127,8 @@ import { ResilienceService } from './resilience';
     ResilienceService,
     GraphService,
     ReactService,
+    CheckpointService,
+    ThreadService,
   ],
 })
 export class AiModule {}

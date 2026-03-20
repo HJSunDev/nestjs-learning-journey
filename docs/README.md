@@ -126,8 +126,8 @@
   - StateSchema 类型系统（MessagesValue/ReducedValue）、Graph API 声明式图编排、`contextSchema` 运行时注入、替代 ToolCallingLoop 的显式状态图
 - ✅ **[048. 生产级 ReAct Agent (ReAct Agent with LangGraph)](notes/048-react-agent.md)**
   - 自建图 + createReactAgent 预构建双模式、ReAct 提示词工程、输入安全守卫（Prompt Injection 防护）、MCP 协议意识
-- 🔲 **049. 持久化执行与线程管理 (Durable Execution & Thread Lifecycle)**
-  - Durable Execution 三模式（sync/async/exit）、`task()` 持久化语义与幂等性、Super-step 与 Checkpoint、PostgresSaver 生产集成、Time-travel 调试
+- ✅ **[049. 持久化执行与线程管理 (Durable Execution & Thread Lifecycle)](notes/049-durable-execution.md)**
+  - Durable Execution 三模式（sync/async/exit）、PostgresSaver 生产集成、Thread 生命周期管理、Checkpoint Super-step 机制、Time-travel 调试（getStateHistory/fork）、`task()` 持久化语义与幂等性
 - 🔲 **050. 人机协同模式 (Human-in-the-Loop Patterns)**
   - `interrupt()` 动态中断与 `Command({ resume })` 恢复、审批 / 编辑 / 验证 / 工具内中断四大模式、Command 从工具返回控制流、分层审批框架
 - 🔲 **051. 高级 Agent 模式 (Advanced Agent Patterns)**

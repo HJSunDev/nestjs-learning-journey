@@ -21,6 +21,22 @@ import { buildToolGraph, type ToolGraphCompiled } from './single';
 import { buildReactPrompt } from './single/react-agent/react-agent.prompts';
 import type { ToolGraphContext } from './shared/nodes';
 import { validateInput } from './shared/guards';
+import { CheckpointService } from './persistence';
+
+/**
+ * 持久化调用附加参数（049 Durable Execution）
+ */
+export interface ThreadConfig {
+  /** 线程 ID — 同一 thread_id 的后续调用在现有状态上继续执行 */
+  threadId: string;
+  /**
+   * 持久化模式
+   * - 'sync': 每步同步写入 checkpoint，最高可靠性
+   * - 'async': 异步写入，高性能但进程崩溃可能丢失最后一步
+   * - 'exit': 仅退出时写入，最佳性能但中间状态不保存
+   */
+  durability?: 'sync' | 'async' | 'exit';
+}
 
 /**
  * ReAct Agent 调用参数
@@ -45,6 +61,8 @@ export interface ReactInvokeResult {
   reasoning?: string;
   iterationCount: number;
   toolCallCount: number;
+  /** 线程 ID（仅在持久化调用时返回） */
+  threadId?: string;
   usage?: {
     promptTokens: number;
     completionTokens: number;
@@ -58,6 +76,37 @@ export interface ReactInvokeResult {
   };
 }
 
+type DurableGraphInput = { messages: BaseMessage[] } | null;
+
+type DurableGraphResult = Record<string, unknown>;
+
+type DurableGraphStreamChunk = [string, unknown];
+
+type DurableGraphStream = AsyncIterable<DurableGraphStreamChunk>;
+
+interface DurableGraphInvokeOptions {
+  context: ToolGraphContext;
+  callbacks: LangChainTracer[];
+  configurable: { thread_id: string };
+  durability: 'sync' | 'async' | 'exit';
+}
+
+interface DurableGraphStreamOptions extends DurableGraphInvokeOptions {
+  streamMode: ['messages', 'updates'];
+  signal: AbortSignal;
+}
+
+interface DurableRuntimeGraph {
+  invoke(
+    input: DurableGraphInput,
+    options: DurableGraphInvokeOptions,
+  ): Promise<DurableGraphResult>;
+  stream(
+    input: DurableGraphInput,
+    options: DurableGraphStreamOptions,
+  ): Promise<DurableGraphStream>;
+}
+
 /**
  * ReAct Service — 生产级 ReAct 智能体服务
  *
@@ -69,22 +118,63 @@ export interface ReactInvokeResult {
  * - 复用 047 的图拓扑和共享节点，ReAct 的核心差异在服务层（提示词 + 守卫）
  * - 图在构造函数中 compile 一次，运行时通过 contextSchema 注入 model/tools
  * - createReactAgent 的内部机制已在文档中拆解，生产代码只保留自建图路径
+ *
+ * 049 新增 Durable Execution：
+ * - durableGraph：带 checkpointer 的图实例，每个 super-step 边界自动保存状态
+ * - invokeWithThread / streamWithThread：线程感知的执行方法
+ * - 通过 thread_id 实现断点续传、错误恢复、跨请求状态保持
  */
 @Injectable()
 export class ReactService {
   private readonly logger = new Logger(ReactService.name);
 
-  /** ReAct 图（与 047 ToolGraph 同拓扑，compile 一次） */
+  /** ReAct 图（无持久化，用于 048 端点） */
   private readonly graph: ToolGraphCompiled;
+
+  /** 持久化 ReAct 图（带 checkpointer，用于 049 端点）— 延迟初始化 */
+  private durableGraph: ToolGraphCompiled | null = null;
 
   constructor(
     private readonly modelFactory: AiModelFactory,
     private readonly toolRegistry: ToolRegistry,
     private readonly configService: ConfigService,
     private readonly reasoningNormalizer: ReasoningNormalizer,
+    private readonly checkpointService: CheckpointService,
   ) {
     this.graph = buildToolGraph();
     this.logger.log('ReAct Agent graph 已编译完成');
+  }
+
+  /**
+   * 获取持久化图实例（延迟编译）
+   *
+   * 在首次调用时编译带 checkpointer 的图。
+   * 延迟初始化是因为 CheckpointService 的 PostgresSaver.setup()
+   * 在 onModuleInit 中异步完成，构造函数阶段尚不可用。
+   *
+   * @returns 带 checkpointer 的编译后图实例
+   */
+  getDurableGraph(): ToolGraphCompiled {
+    if (!this.durableGraph) {
+      // 获取checkpoint存储器 checkpointer
+      const checkpointer = this.checkpointService.getCheckpointer();
+      this.durableGraph = buildToolGraph({ checkpointer });
+      this.logger.log(
+        `持久化 ReAct 图已编译（${this.checkpointService.isPostgresBacked() ? 'PostgresSaver' : 'MemorySaver'}）`,
+      );
+    }
+    return this.durableGraph;
+  }
+
+  /**
+   * 获取线程运行时使用的持久化图接口
+   *
+   * LangGraph 当前的泛型声明会把 `configurable` 约束到 `contextSchema`，
+   * 但 Durable Execution 需要额外传入 `thread_id`。这里通过局部接口桥接，
+   * 保持调用点仍然是强类型，而不是退化成 `Function` / `any`。
+   */
+  private getDurableRuntimeGraph(): DurableRuntimeGraph {
+    return this.getDurableGraph() as unknown as DurableRuntimeGraph;
   }
 
   // ============================================================
@@ -214,6 +304,190 @@ export class ReactService {
           signal,
         },
       );
+
+      for await (const chunk of stream) {
+        if (signal.aborted) break;
+
+        const [streamMode, data] = chunk as [string, unknown];
+        if (streamMode === 'messages') {
+          this.processMessagesChunk(data, params.provider, subscriber);
+        } else if (streamMode === 'updates') {
+          this.processUpdatesChunk(data as Record<string, unknown>, subscriber);
+        }
+      }
+
+      this.emitDone(signal, tracer, subscriber);
+    } catch (error) {
+      this.handleStreamError(error, signal, startTime, subscriber);
+    }
+  }
+
+  // ============================================================
+  // 049 Durable Execution — 线程感知的持久化调用
+  // ============================================================
+
+  /**
+   * ReAct Agent 线程感知非流式调用（Durable Execution）
+   *
+   * 与 invoke() 的关键差异：
+   * - 使用带 checkpointer 的持久化图
+   * - 通过 thread_id 标识执行上下文，同一线程的后续调用延续之前的状态
+   * - 支持三种持久化模式（sync/async/exit）
+   * - messages 为 null 时触发错误恢复（从最后一个成功的 checkpoint 恢复）
+   *
+   * @param params - ReAct 调用参数（messages 为 null 时触发恢复执行）
+   * @param threadConfig - 线程配置（threadId + durability 模式）
+   * @returns ReAct 调用结果
+   * @throws {BadRequestException} 当模型不支持 tool calling 或输入不安全时
+   */
+  async invokeWithThread(
+    params: ReactInvokeParams,
+    threadConfig: ThreadConfig,
+  ): Promise<ReactInvokeResult> {
+    this.validateToolCallingSupport(params.provider, params.model);
+
+    // 当 messages 非空时才做输入安全校验（null 表示恢复执行）
+    if (params.messages?.length) {
+      validateInput(params.messages);
+    }
+
+    const tracer = new LangChainTracer(this.logger);
+    // 获取最大迭代次数
+    const maxIterations = params.maxIterations ?? 5;
+    // 获取持久化模式
+    const durability =
+      threadConfig.durability ??
+      this.checkpointService.getDefaultDurabilityMode();
+
+    this.logger.log(
+      `[ReAct:Durable] 线程 ${threadConfig.threadId}，` +
+        `提供商: ${params.provider}, 模型: ${params.model}, ` +
+        `持久化模式: ${durability}, traceId: ${tracer.getTraceId()}`,
+    );
+
+    const model = this.modelFactory.createChatModel(params.provider, {
+      model: params.model,
+      temperature: params.temperature,
+      maxTokens: params.maxTokens,
+    });
+
+    const tools = this.toolRegistry.getTools(params.toolNames);
+
+    // 构建 ReAct 消息列表,包含 ReAct 系统提示词
+    // 恢复执行时 input 为 null，图从最后一个 checkpoint 继续
+    const input = params.messages?.length
+      ? {
+          messages: this.buildReactMessages(
+            params.messages,
+            params.systemPrompt,
+          ),
+        }
+      : null;
+
+    // 构建工具调用图的上下文
+    const context: ToolGraphContext = { model, tools, maxIterations };
+
+    // 获取持久化图实例 并 执行持久化图
+    const result = await this.getDurableRuntimeGraph().invoke(input, {
+      context,
+      callbacks: [tracer],
+      configurable: { thread_id: threadConfig.threadId },
+      durability,
+    });
+
+    const invokeResult = this.buildResult(result, tracer, params.provider);
+
+    return {
+      ...invokeResult,
+      threadId: threadConfig.threadId,
+    };
+  }
+
+  /**
+   * ReAct Agent 线程感知流式调用（Durable Execution）
+   *
+   * 流式版本的持久化执行，每个 token 实时推送。
+   *
+   * @param params - ReAct 调用参数
+   * @param threadConfig - 线程配置
+   * @returns StreamChunk 的 Observable 流
+   * @throws {BadRequestException} 当模型不支持 tool calling 或输入不安全时
+   */
+  streamWithThread(
+    params: ReactInvokeParams,
+    threadConfig: ThreadConfig,
+  ): Observable<StreamChunk> {
+    this.validateToolCallingSupport(params.provider, params.model);
+    if (params.messages?.length) {
+      validateInput(params.messages);
+    }
+
+    return new Observable<StreamChunk>((subscriber) => {
+      const abortController = new AbortController();
+
+      void this.runDurableStream(
+        params,
+        threadConfig,
+        subscriber,
+        abortController.signal,
+      );
+
+      return () => abortController.abort();
+    });
+  }
+
+  /**
+   * 持久化流式执行内部实现
+   */
+  private async runDurableStream(
+    params: ReactInvokeParams,
+    threadConfig: ThreadConfig,
+    subscriber: Subscriber<StreamChunk>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const tracer = new LangChainTracer(this.logger);
+    const startTime = Date.now();
+    const maxIterations = params.maxIterations ?? 5;
+    // 获取持久化模式
+    const durability =
+      threadConfig.durability ??
+      this.checkpointService.getDefaultDurabilityMode();
+
+    try {
+      const model = this.modelFactory.createChatModel(params.provider, {
+        model: params.model,
+        streaming: true,
+        temperature: params.temperature,
+        maxTokens: params.maxTokens,
+      });
+
+      const tools = this.toolRegistry.getTools(params.toolNames);
+
+      const input = params.messages?.length
+        ? {
+            messages: this.buildReactMessages(
+              params.messages,
+              params.systemPrompt,
+            ),
+          }
+        : null;
+
+      const context: ToolGraphContext = { model, tools, maxIterations };
+
+      // 推送线程 ID 元信息，前端可据此管理会话
+      subscriber.next({
+        type: StreamChunkType.META,
+        meta: { threadId: threadConfig.threadId },
+      });
+
+      const stream = await this.getDurableRuntimeGraph().stream(input, {
+        context,
+        callbacks: [tracer],
+        streamMode: ['messages', 'updates'],
+        signal,
+        configurable: { thread_id: threadConfig.threadId },
+        durability,
+      });
 
       for await (const chunk of stream) {
         if (signal.aborted) break;

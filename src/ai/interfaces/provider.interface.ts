@@ -47,6 +47,8 @@ export interface StreamChunk {
     llmTotalLatencyMs: number;
     totalTokens: number;
   };
+  /** 结构化元信息（如线程 ID，049 章节新增） */
+  meta?: Record<string, unknown>;
 }
 
 /**

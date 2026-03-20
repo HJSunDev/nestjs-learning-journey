@@ -121,6 +121,18 @@ export default registerAs('ai', () => ({
     ),
   },
 
+  // Checkpoint 持久化配置
+  checkpoint: {
+    // 是否启用 PostgresSaver 持久化（关闭时退化为 MemorySaver 内存模式）
+    enabled: process.env.AI_CHECKPOINT_ENABLED !== 'false',
+    // 默认持久化模式：sync（同步，最可靠）| async（异步，高性能）| exit（仅退出时写入）
+    durabilityMode:
+      (process.env.AI_CHECKPOINT_DURABILITY_MODE as
+        | 'sync'
+        | 'async'
+        | 'exit') || 'sync',
+  },
+
   // 会话记忆配置
   memory: {
     // 默认会话 TTL (Time To Live，生存时间，单位：秒)

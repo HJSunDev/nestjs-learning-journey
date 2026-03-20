@@ -208,3 +208,19 @@ import { ChatAlibabaTongyi } from '@langchain/community/chat_models/alibaba_tong
 - 当 `@langchain/community` 中所需功能可通过 `@langchain/core` 基类 + 已有驱动自行实现时
 - `@langchain/core` 提供对应的抽象基类（`VectorStore`、`BaseListChatMessageHistory` 等）
 - 若未来 LangChain 将集成拆分为独立包（如 Python 生态的 `langchain-postgres`），可考虑迁移至官方独立包
+
+---
+
+### [EXP-005] BaseMessage：用 `type`，别用 `_getType()` / `getType()`
+
+- **日期**: 2026-03-19
+- **关联**: `thread.service.ts` → `serializeMessage`
+- **标签**: `#langchain` `#BaseMessage`
+
+**结论**：序列化或要类型字符串时用 **`msg.type`**。`_getType()` / `getType()` 在 `@langchain/core` 1.x 类型上均标弃用。
+
+```typescript
+const type = msg.type ?? 'unknown';
+```
+
+分支判断优先 `isAIMessage` 等类型守卫，少靠字符串。

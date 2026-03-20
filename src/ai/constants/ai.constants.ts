@@ -42,6 +42,8 @@ export enum StreamChunkType {
   DONE = 'done',
   /** 错误信息 */
   ERROR = 'error',
+  /** 元信息（线程 ID 等结构化元数据） */
+  META = 'meta',
 }
 
 /**

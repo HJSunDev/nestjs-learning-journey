@@ -14,6 +14,7 @@
   - [EXP-002] @langchain/community 的 ChatMoonshot 不支持 reasoning_content、tool calling 和真正的流式输出
   - [EXP-003] 使用 ChatDeepSeek 统一适配所有 OpenAI 兼容的国内模型厂商
   - [EXP-004] 避免引入 @langchain/community：peer dependency 冲突与自实现策略
+  - [EXP-005] BaseMessage：用 `type`，别用 `_getType()` / `getType()`
 
 <!-- MODULE_EXP_END -->
 

@@ -8,3 +8,5 @@ export * from './rag.dto';
 export * from './resilient-chat.dto';
 export * from './graph-chat.dto';
 export * from './react-chat.dto';
+export * from './thread-chat.dto';
+export * from './thread-state.dto';
