@@ -13,6 +13,7 @@ import { AgentController } from './agents/agent.controller';
 import { GraphService } from './agents/graph.service';
 import { ReactService } from './agents/react.service';
 import { CheckpointService, ThreadService } from './agents/persistence';
+import { HitlService } from './agents/hitl';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
@@ -79,6 +80,11 @@ import { ResilienceService } from './resilience';
  * - ThreadService:          线程状态查询、checkpoint 历史回溯、Time-travel 分叉
  * - ReactService 扩展:     invokeWithThread/streamWithThread 线程感知的持久化执行
  *
+ * 050 新增 Human-in-the-Loop 人机协同层：
+ * - HitlService:            HITL 智能体服务（interrupt/resume 审批生命周期管理）
+ * - buildHitlToolGraph:     HITL 图构建器（含 reviewToolCalls 审批中断节点）
+ * - reviewToolCallsNode:    审批节点（interrupt() 暂停 + Command 动态路由）
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -109,6 +115,7 @@ import { ResilienceService } from './resilience';
     ReactService,
     CheckpointService,
     ThreadService,
+    HitlService,
   ],
   exports: [
     AiService,
@@ -129,6 +136,7 @@ import { ResilienceService } from './resilience';
     ReactService,
     CheckpointService,
     ThreadService,
+    HitlService,
   ],
 })
 export class AiModule {}

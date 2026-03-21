@@ -128,8 +128,8 @@
   - 自建图 + createReactAgent 预构建双模式、ReAct 提示词工程、输入安全守卫（Prompt Injection 防护）、MCP 协议意识
 - ✅ **[049. 持久化执行与线程管理 (Durable Execution & Thread Lifecycle)](notes/049-durable-execution.md)**
   - Durable Execution 三模式（sync/async/exit）、PostgresSaver 生产集成、Thread 生命周期管理、Checkpoint Super-step 机制、Time-travel 调试（getStateHistory/fork）、`task()` 持久化语义与幂等性
-- 🔲 **050. 人机协同模式 (Human-in-the-Loop Patterns)**
-  - `interrupt()` 动态中断与 `Command({ resume })` 恢复、审批 / 编辑 / 验证 / 工具内中断四大模式、Command 从工具返回控制流、分层审批框架
+- ✅ **[050. 人机协同模式 (Human-in-the-Loop Patterns)](notes/050-human-in-the-loop.md)**
+  - `interrupt()` 动态中断与 `Command({ resume })` 恢复、二元审批模型（approve / reject，对齐 Claude Agent SDK / OpenAI Agents SDK 生产标准）、`reviewToolCalls` 审批节点 + `Command({ goto })` 动态路由、`autoApproveTools` 分层审批策略
 - 🔲 **051. 高级 Agent 模式 (Advanced Agent Patterns)**
   - Subgraph 模块化、Reflection 自我修正、Plan-and-Execute、模式选型指南
 - 🔲 **052. 记忆体系与运行时扩展 (Memory & Runtime Extensibility)**

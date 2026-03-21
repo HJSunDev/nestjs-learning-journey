@@ -78,9 +78,7 @@ export function buildToolGraph(options?: {
     .addEdge(START, 'callModel')
     // 创建一条 条件边：callModel 节点执行完后，根据 shouldContinue 的返回值，决定走向 executeTools 节点还是 END 节点
     .addConditionalEdges('callModel', shouldContinue, {
-      // 如果 shouldContinue 返回 ROUTE.TOOLS，则走向 executeTools 节点
       [ROUTE.TOOLS]: 'executeTools',
-      // 如果 shouldContinue 返回 ROUTE.END，则走向 END 节点
       [ROUTE.END]: END,
     })
     // 创建一条 无条件边：executeTools 节点执行完后，回到 callModel 节点

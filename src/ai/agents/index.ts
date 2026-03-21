@@ -25,3 +25,18 @@ export { validateInput, type GuardrailResult } from './shared/guards';
 
 export { CheckpointService, ThreadService } from './persistence';
 export type { ThreadStateSnapshot, SerializedMessage } from './persistence';
+
+export { HitlService } from './hitl';
+export type { HitlInvokeParams, HitlThreadConfig } from './hitl';
+export {
+  ReviewAction,
+  type ReviewDecision,
+  type EditedToolCall,
+  type HitlConfig,
+  type HitlInvokeResult,
+  type InterruptValue,
+  type InterruptEntry,
+} from './hitl';
+
+export { buildHitlToolGraph, type HitlGraphCompiled } from './single';
+export { reviewToolCallsNode, type HitlGraphContext } from './single';

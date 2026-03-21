@@ -44,6 +44,8 @@ export enum StreamChunkType {
   ERROR = 'error',
   /** 元信息（线程 ID 等结构化元数据） */
   META = 'meta',
+  /** 人机协同中断（050 HITL，图执行在 interrupt() 处暂停，等待人类审批） */
+  INTERRUPT = 'interrupt',
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   Logger,
   UseFilters,
   ParseUUIDPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -24,6 +25,7 @@ import type { Response } from 'express';
 
 import { GraphService } from './graph.service';
 import { ReactService } from './react.service';
+import { HitlService } from './hitl';
 import { ThreadService } from './persistence';
 import {
   GraphChatRequestDto,
@@ -36,6 +38,9 @@ import {
   ThreadHistoryQueryDto,
   ThreadForkRequestDto,
   ThreadForkResponseDto,
+  HitlChatRequestDto,
+  HitlChatResponseDto,
+  HitlResumeRequestDto,
 } from '../dto';
 import { AiExceptionFilter } from '../filters/ai-exception.filter';
 import { AiStreamAdapter } from '../adapters/stream.adapter';
@@ -66,6 +71,12 @@ import { Public } from 'src/common/decorators/public.decorator';
  * - GET  /thread/:threadId/state         获取线程当前状态
  * - GET  /thread/:threadId/history       获取线程 checkpoint 历史
  * - POST /thread/:threadId/fork          从历史 checkpoint 分叉
+ *
+ * 050 章节端点（Human-in-the-Loop）：
+ * - POST /hitl/chat                      HITL 对话（首次调用，可能返回 interrupted）
+ * - POST /hitl/chat/stream               HITL 流式对话
+ * - POST /hitl/resume                    审批恢复执行
+ * - POST /hitl/resume/stream             审批恢复流式执行
  */
 @ApiTags('AI 服务 (Agent 智能体)')
 @ApiBearerAuth()
@@ -77,6 +88,7 @@ export class AgentController {
   constructor(
     private readonly graphService: GraphService,
     private readonly reactService: ReactService,
+    private readonly hitlService: HitlService,
     private readonly threadService: ThreadService,
     private readonly streamAdapter: AiStreamAdapter,
   ) {}
@@ -448,5 +460,230 @@ export class AgentController {
       configurable: result.configurable,
       message: `已从 checkpoint ${dto.checkpointId} 创建分叉，可通过 thread/chat 端点继续执行`,
     };
+  }
+
+  // ============================================================
+  // 050 Human-in-the-Loop 端点
+  // ============================================================
+
+  @Public()
+  @Post('hitl/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'HITL 对话 — 人机协同工具审批',
+    description:
+      '基于 050 Human-in-the-Loop 的 ReAct Agent。' +
+      '在 callModel 生成工具调用后、executeTools 执行前，' +
+      '通过 interrupt() 暂停执行等待人类审批。' +
+      '响应 status="interrupted" 时，需通过 hitl/resume 端点提交审批决策。' +
+      'autoApproveTools 中的工具不触发审批，直接执行。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'HITL 对话结果（completed 或 interrupted）',
+    type: HitlChatResponseDto,
+  })
+  async hitlChat(
+    @Body() dto: HitlChatRequestDto,
+  ): Promise<HitlChatResponseDto> {
+    this.logger.log(
+      `[HITL] 对话，线程: ${dto.threadId}, ` +
+        `提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const result = await this.hitlService.invoke(
+      {
+        provider: dto.provider,
+        model: dto.model,
+        messages: dto.messages ?? [],
+        systemPrompt: dto.systemPrompt,
+        toolNames: dto.tools,
+        maxIterations: dto.maxIterations,
+        temperature: dto.temperature,
+        maxTokens: dto.maxTokens,
+        autoApproveTools: dto.autoApproveTools,
+      },
+      {
+        threadId: dto.threadId,
+        durability: dto.durability,
+      },
+    );
+
+    return {
+      status: result.status,
+      threadId: result.threadId,
+      content: result.content,
+      reasoning: result.reasoning,
+      iterationCount: result.iterationCount,
+      toolCallCount: result.toolCallCount,
+      usage: result.usage,
+      trace: result.trace,
+      interrupt: result.interrupt,
+    };
+  }
+
+  @Public()
+  @Post('hitl/chat/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'HITL 流式对话',
+    description:
+      '流式版 HITL 对话。token 级实时推送，' +
+      '当 interrupt() 触发时发射 INTERRUPT 事件（含待审批工具调用列表），' +
+      '随后发射 DONE 事件。首个事件为 META 类型（含 threadId）。',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiResponse({
+    status: 200,
+    description: 'SSE 流式响应（含 META/TEXT/TOOL_CALL/INTERRUPT/DONE 事件）',
+  })
+  streamHitlChat(@Body() dto: HitlChatRequestDto, @Res() res: Response): void {
+    this.logger.log(
+      `[HITL] 流式对话，线程: ${dto.threadId}, ` +
+        `提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const stream$ = this.hitlService.stream(
+      {
+        provider: dto.provider,
+        model: dto.model,
+        messages: dto.messages ?? [],
+        systemPrompt: dto.systemPrompt,
+        toolNames: dto.tools,
+        maxIterations: dto.maxIterations,
+        temperature: dto.temperature,
+        maxTokens: dto.maxTokens,
+        autoApproveTools: dto.autoApproveTools,
+      },
+      {
+        threadId: dto.threadId,
+        durability: dto.durability,
+      },
+    );
+
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: 'HITL对话',
+      provider: dto.provider,
+      model: dto.model,
+    });
+  }
+
+  @Public()
+  @Post('hitl/resume')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'HITL 审批恢复执行',
+    description:
+      '在 hitl/chat 返回 status="interrupted" 后，审批人通过此端点提交审批决策。' +
+      '支持两种审批粒度：decision（批量模式）或 toolDecisions（逐工具模式），二选一。' +
+      '恢复后可能再次返回 interrupted（新一轮工具调用需要审批）或 completed。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '恢复执行结果（completed 或 interrupted）',
+    type: HitlChatResponseDto,
+  })
+  async hitlResume(
+    @Body() dto: HitlResumeRequestDto,
+  ): Promise<HitlChatResponseDto> {
+    const resumeValue = this.buildResumeValue(dto);
+
+    this.logger.log(
+      `[HITL] 审批恢复，线程: ${dto.threadId}, 模式: ${Array.isArray(resumeValue) ? 'per-tool' : 'batch'}`,
+    );
+
+    const result = await this.hitlService.resume(
+      {
+        threadId: dto.threadId,
+        durability: dto.durability,
+      },
+      resumeValue,
+      {
+        provider: dto.provider,
+        model: dto.model,
+        messages: [],
+        toolNames: dto.tools,
+        maxIterations: dto.maxIterations,
+        temperature: dto.temperature,
+        maxTokens: dto.maxTokens,
+        autoApproveTools: dto.autoApproveTools,
+      },
+    );
+
+    return {
+      status: result.status,
+      threadId: result.threadId,
+      content: result.content,
+      reasoning: result.reasoning,
+      iterationCount: result.iterationCount,
+      toolCallCount: result.toolCallCount,
+      usage: result.usage,
+      trace: result.trace,
+      interrupt: result.interrupt,
+    };
+  }
+
+  @Public()
+  @Post('hitl/resume/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'HITL 审批恢复流式执行',
+    description: '流式版审批恢复。审批决策提交后，后续 token 实时推送。',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiResponse({
+    status: 200,
+    description: 'SSE 流式响应',
+  })
+  streamHitlResume(
+    @Body() dto: HitlResumeRequestDto,
+    @Res() res: Response,
+  ): void {
+    const resumeValue = this.buildResumeValue(dto);
+
+    this.logger.log(
+      `[HITL] 流式审批恢复，线程: ${dto.threadId}, 模式: ${Array.isArray(resumeValue) ? 'per-tool' : 'batch'}`,
+    );
+
+    const stream$ = this.hitlService.resumeStream(
+      {
+        threadId: dto.threadId,
+        durability: dto.durability,
+      },
+      resumeValue,
+      {
+        provider: dto.provider,
+        model: dto.model,
+        messages: [],
+        toolNames: dto.tools,
+        maxIterations: dto.maxIterations,
+        temperature: dto.temperature,
+        maxTokens: dto.maxTokens,
+        autoApproveTools: dto.autoApproveTools,
+      },
+    );
+
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: 'HITL审批恢复',
+      provider: dto.provider,
+      model: dto.model,
+    });
+  }
+
+  /**
+   * 从 DTO 构建 resume 值 — 批量模式或逐工具模式
+   *
+   * @throws {BadRequestException} 当 decision 和 toolDecisions 同时缺失时
+   */
+  private buildResumeValue(dto: HitlResumeRequestDto) {
+    if (dto.toolDecisions?.length) {
+      return dto.toolDecisions;
+    }
+    if (dto.decision) {
+      return dto.decision;
+    }
+    throw new BadRequestException(
+      'decision 或 toolDecisions 必须提供其中之一',
+    );
   }
 }

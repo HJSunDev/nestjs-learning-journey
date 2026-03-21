@@ -49,6 +49,22 @@ export interface StreamChunk {
   };
   /** 结构化元信息（如线程 ID，049 章节新增） */
   meta?: Record<string, unknown>;
+  /** 中断载荷（050 HITL，图在 interrupt() 处暂停时返回的审批请求） */
+  interrupt?: InterruptPayload;
+}
+
+/**
+ * HITL 中断载荷 — interrupt() 暂停时返回给调用方的审批请求
+ */
+export interface InterruptPayload {
+  /** 中断 ID（用于多中断场景的匹配） */
+  id?: string;
+  /** 中断类型标识 */
+  type: string;
+  /** 待审批的工具调用列表 */
+  toolCalls: ToolCallInfo[];
+  /** 面向审批人的可读提示 */
+  message: string;
 }
 
 /**

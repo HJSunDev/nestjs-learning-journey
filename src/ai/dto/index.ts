@@ -10,3 +10,4 @@ export * from './graph-chat.dto';
 export * from './react-chat.dto';
 export * from './thread-chat.dto';
 export * from './thread-state.dto';
+export * from './hitl.dto';
