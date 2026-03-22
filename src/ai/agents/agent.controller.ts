@@ -27,6 +27,7 @@ import { GraphService } from './graph.service';
 import { ReactService } from './react.service';
 import { HitlService } from './hitl';
 import { ThreadService } from './persistence';
+import { AdvancedPatternsService } from './advanced-patterns';
 import {
   GraphChatRequestDto,
   GraphChatResponseDto,
@@ -41,6 +42,10 @@ import {
   HitlChatRequestDto,
   HitlChatResponseDto,
   HitlResumeRequestDto,
+  ReflectionChatRequestDto,
+  ReflectionChatResponseDto,
+  PlanExecuteChatRequestDto,
+  PlanExecuteChatResponseDto,
 } from '../dto';
 import { AiExceptionFilter } from '../filters/ai-exception.filter';
 import { AiStreamAdapter } from '../adapters/stream.adapter';
@@ -77,6 +82,10 @@ import { Public } from 'src/common/decorators/public.decorator';
  * - POST /hitl/chat/stream               HITL 流式对话
  * - POST /hitl/resume                    审批恢复执行
  * - POST /hitl/resume/stream             审批恢复流式执行
+ *
+ * 051 章节端点（Advanced Agent Patterns）：
+ * - POST /reflection/chat                Reflection 自我修正对话
+ * - POST /plan-execute/chat              Plan-and-Execute 规划执行对话
  */
 @ApiTags('AI 服务 (Agent 智能体)')
 @ApiBearerAuth()
@@ -90,6 +99,7 @@ export class AgentController {
     private readonly reactService: ReactService,
     private readonly hitlService: HitlService,
     private readonly threadService: ThreadService,
+    private readonly advancedPatternsService: AdvancedPatternsService,
     private readonly streamAdapter: AiStreamAdapter,
   ) {}
 
@@ -670,6 +680,106 @@ export class AgentController {
     });
   }
 
+  // ============================================================
+  // 051 Advanced Agent Patterns 端点
+  // ============================================================
+
+  @Public()
+  @Post('reflection/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reflection 自我修正对话',
+    description:
+      '基于 051 Reflection 模式的质量门控生成。' +
+      'Generator 生成内容后由独立的 Evaluator 评估质量，' +
+      '未通过时携带反馈返回 Generator 修正，' +
+      '循环直到评估通过或达到最大反思次数。' +
+      '支持 Generator 和 Evaluator 使用不同模型（更强模型把关质量）。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Reflection 对话成功',
+    type: ReflectionChatResponseDto,
+  })
+  async reflectionChat(
+    @Body() dto: ReflectionChatRequestDto,
+  ): Promise<ReflectionChatResponseDto> {
+    this.logger.log(
+      `[Reflection] 自我修正对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const result = await this.advancedPatternsService.invokeReflection({
+      provider: dto.provider,
+      model: dto.model,
+      messages: dto.messages,
+      systemPrompt: dto.systemPrompt,
+      evaluationCriteria: dto.evaluationCriteria,
+      maxReflections: dto.maxReflections,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      evaluatorModel: dto.evaluatorModel,
+      evaluatorProvider: dto.evaluatorProvider,
+    });
+
+    return {
+      content: result.content,
+      reflectionCount: result.reflectionCount,
+      score: result.score,
+      feedback: result.feedback,
+      passed: result.passed,
+      usage: result.usage,
+      trace: result.trace,
+    };
+  }
+
+  @Public()
+  @Post('plan-execute/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Plan-and-Execute 规划执行对话',
+    description:
+      '基于 051 Plan-Execute 模式的复杂任务处理。' +
+      'Planner 将用户目标分解为步骤列表，' +
+      'Executor 逐步执行（通过 tool-graph 子图使用工具），' +
+      'Replanner 在每步完成后审视进度，支持动态调整计划。' +
+      '子图组合：Executor 在节点内部调用 tool-graph 作为子图。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Plan-Execute 对话成功',
+    type: PlanExecuteChatResponseDto,
+  })
+  async planExecuteChat(
+    @Body() dto: PlanExecuteChatRequestDto,
+  ): Promise<PlanExecuteChatResponseDto> {
+    this.logger.log(
+      `[PlanExecute] 规划执行对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const result = await this.advancedPatternsService.invokePlanExecute({
+      provider: dto.provider,
+      model: dto.model,
+      messages: dto.messages,
+      systemPrompt: dto.systemPrompt,
+      toolNames: dto.tools,
+      maxIterations: dto.maxIterations,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+    });
+
+    return {
+      content: result.content,
+      plan: result.plan,
+      stepResults: result.stepResults,
+      usage: result.usage,
+      trace: result.trace,
+    };
+  }
+
+  // ============================================================
+  // Private Helpers
+  // ============================================================
+
   /**
    * 从 DTO 构建 resume 值 — 批量模式或逐工具模式
    *
@@ -682,8 +792,6 @@ export class AgentController {
     if (dto.decision) {
       return dto.decision;
     }
-    throw new BadRequestException(
-      'decision 或 toolDecisions 必须提供其中之一',
-    );
+    throw new BadRequestException('decision 或 toolDecisions 必须提供其中之一');
   }
 }

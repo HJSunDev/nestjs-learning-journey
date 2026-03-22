@@ -14,6 +14,7 @@ import { GraphService } from './agents/graph.service';
 import { ReactService } from './agents/react.service';
 import { CheckpointService, ThreadService } from './agents/persistence';
 import { HitlService } from './agents/hitl';
+import { AdvancedPatternsService } from './agents/advanced-patterns';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
@@ -85,6 +86,11 @@ import { ResilienceService } from './resilience';
  * - buildHitlToolGraph:     HITL 图构建器（含 reviewToolCalls 审批中断节点）
  * - reviewToolCallsNode:    审批节点（interrupt() 暂停 + Command 动态路由）
  *
+ * 051 新增高级 Agent 模式层：
+ * - AdvancedPatternsService: Reflection 自我修正 + Plan-Execute 规划执行
+ * - buildReflectionGraph:    Reflection 图构建器（generate → evaluate → shouldReflect 循环）
+ * - buildPlanExecuteGraph:   Plan-Execute 图构建器（planner → executor → replanner，含 Subgraph 组合）
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -116,6 +122,7 @@ import { ResilienceService } from './resilience';
     CheckpointService,
     ThreadService,
     HitlService,
+    AdvancedPatternsService,
   ],
   exports: [
     AiService,
@@ -137,6 +144,7 @@ import { ResilienceService } from './resilience';
     CheckpointService,
     ThreadService,
     HitlService,
+    AdvancedPatternsService,
   ],
 })
 export class AiModule {}

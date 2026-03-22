@@ -40,3 +40,20 @@ export {
 
 export { buildHitlToolGraph, type HitlGraphCompiled } from './single';
 export { reviewToolCallsNode, type HitlGraphContext } from './single';
+
+export {
+  buildReflectionGraph,
+  type ReflectionGraphCompiled,
+  type ReflectionGraphContext,
+} from './single';
+export {
+  buildPlanExecuteGraph,
+  type PlanExecuteGraphCompiled,
+  type PlanExecuteGraphContext,
+} from './single';
+
+export { AdvancedPatternsService } from './advanced-patterns';
+export type {
+  ReflectionInvokeParams,
+  PlanExecuteInvokeParams,
+} from './advanced-patterns';

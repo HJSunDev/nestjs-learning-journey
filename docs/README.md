@@ -130,8 +130,8 @@
   - Durable Execution 三模式（sync/async/exit）、PostgresSaver 生产集成、Thread 生命周期管理、Checkpoint Super-step 机制、Time-travel 调试（getStateHistory/fork）、`task()` 持久化语义与幂等性
 - ✅ **[050. 人机协同模式 (Human-in-the-Loop Patterns)](notes/050-human-in-the-loop.md)**
   - `interrupt()` 动态中断与 `Command({ resume })` 恢复、二元审批模型（approve / reject，对齐 Claude Agent SDK / OpenAI Agents SDK 生产标准）、`reviewToolCalls` 审批节点 + `Command({ goto })` 动态路由、`autoApproveTools` 分层审批策略
-- 🔲 **051. 高级 Agent 模式 (Advanced Agent Patterns)**
-  - Subgraph 模块化、Reflection 自我修正、Plan-and-Execute、模式选型指南
+- ✅ **[051. 高级 Agent 模式 (Advanced Agent Patterns)](notes/051-advanced-agent-patterns.md)**
+  - Subgraph 模块化组合、Reflection 自我修正（generate → evaluate 循环）、Plan-and-Execute 规划执行（含 tool-graph 子图组合）、模式选型决策树
 - 🔲 **052. 记忆体系与运行时扩展 (Memory & Runtime Extensibility)**
   - Store 长期记忆（语义/情景/程序记忆）、Lane Queue 会话串行队列、Skills-as-Markdown 扩展模型
 - 🔲 **053. 多智能体协作系统 (Multi-Agent Architecture)**
