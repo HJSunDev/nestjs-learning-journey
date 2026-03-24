@@ -143,4 +143,23 @@ export default registerAs('ai', () => ({
     defaultWindowSize: parseInt(process.env.AI_MEMORY_WINDOW_SIZE || '20', 10),
     keyPrefix: process.env.AI_MEMORY_KEY_PREFIX || 'chat_history:',
   },
+
+  // 长期记忆 Store 配置（052 章节：BaseStore / PostgresStore）
+  store: {
+    // 是否启用 PostgresStore（关闭时退化为 InMemoryStore 内存模式）
+    enabled: process.env.AI_STORE_ENABLED !== 'false',
+    // 记忆 TTL（秒），0 表示永不过期，第二个参数 10 表示十进制
+    memoryTtlSeconds: parseInt(process.env.AI_STORE_MEMORY_TTL || '0', 10),
+    // 语义搜索默认返回条数
+    defaultSearchLimit: parseInt(
+      process.env.AI_STORE_DEFAULT_SEARCH_LIMIT || '5',
+      10,
+    ),
+  },
+
+  // 文件系统技能配置（052 章节：Agent Skills 开放标准）
+  skills: {
+    // 技能目录路径（支持绝对/相对路径，默认 src/ai/skills）
+    dir: process.env.AI_SKILLS_DIR || '',
+  },
 }));

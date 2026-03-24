@@ -29,6 +29,12 @@ import { HitlService } from './hitl';
 import { ThreadService } from './persistence';
 import { AdvancedPatternsService } from './advanced-patterns';
 import {
+  MemoryAgentService,
+  MemoryStoreService,
+  SkillLoaderService,
+  MemoryType,
+} from './memory-store';
+import {
   GraphChatRequestDto,
   GraphChatResponseDto,
   ReactChatRequestDto,
@@ -46,6 +52,11 @@ import {
   ReflectionChatResponseDto,
   PlanExecuteChatRequestDto,
   PlanExecuteChatResponseDto,
+  MemoryAgentChatRequestDto,
+  MemoryAgentChatResponseDto,
+  PutMemoryRequestDto,
+  SearchMemoriesQueryDto,
+  SkillCatalogEntryDto,
 } from '../dto';
 import { AiExceptionFilter } from '../filters/ai-exception.filter';
 import { AiStreamAdapter } from '../adapters/stream.adapter';
@@ -86,6 +97,14 @@ import { Public } from 'src/common/decorators/public.decorator';
  * 051 章节端点（Advanced Agent Patterns）：
  * - POST /reflection/chat                Reflection 自我修正对话
  * - POST /plan-execute/chat              Plan-and-Execute 规划执行对话
+ *
+ * 052 章节端点（Memory & Runtime Extensibility）：
+ * - POST /memory-agent/chat              Memory-aware Agent 对话（Store 长期记忆 + 记忆提取 + 技能加载）
+ * - GET  /store/memories/:userId/search  搜索用户记忆（语义搜索）
+ * - POST /store/memories/:userId         创建记忆
+ * - POST /store/memories/:userId/delete  删除记忆
+ * - GET  /skills                         列出已扫描的技能（调试用）
+ * - POST /skills/reload                  重新扫描技能目录（开发热刷新）
  */
 @ApiTags('AI 服务 (Agent 智能体)')
 @ApiBearerAuth()
@@ -100,6 +119,9 @@ export class AgentController {
     private readonly hitlService: HitlService,
     private readonly threadService: ThreadService,
     private readonly advancedPatternsService: AdvancedPatternsService,
+    private readonly memoryAgentService: MemoryAgentService,
+    private readonly memoryStoreService: MemoryStoreService,
+    private readonly skillLoaderService: SkillLoaderService,
     private readonly streamAdapter: AiStreamAdapter,
   ) {}
 
@@ -773,6 +795,194 @@ export class AgentController {
       stepResults: result.stepResults,
       usage: result.usage,
       trace: result.trace,
+    };
+  }
+
+  // ============================================================
+  // 052 Memory & Runtime Extensibility 端点
+  // ============================================================
+
+  @Public()
+  @Post('memory-agent/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Memory-aware Agent 对话',
+    description:
+      '基于 052 记忆体系的智能对话。' +
+      '对话前从 Store 中检索与用户相关的长期记忆（语义搜索），动态注入系统提示词。' +
+      '对话后自动从 AI 回复中提取新的记忆事实并持久化存储。' +
+      '可选启用 Skills-as-Markdown 运行时技能加载。' +
+      '同一 threadId 的请求通过 Lane Queue 串行执行，防止 checkpoint 写入冲突。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Memory Agent 对话成功',
+    type: MemoryAgentChatResponseDto,
+  })
+  async memoryAgentChat(
+    @Body() dto: MemoryAgentChatRequestDto,
+  ): Promise<MemoryAgentChatResponseDto> {
+    this.logger.log(
+      `[MemoryAgent] 对话，用户: ${dto.userId}, 提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const result = await this.memoryAgentService.invoke(
+      {
+        provider: dto.provider,
+        model: dto.model,
+        messages: dto.messages,
+        systemPrompt: dto.systemPrompt,
+        userId: dto.userId,
+        toolNames: dto.tools,
+        maxIterations: dto.maxIterations,
+        temperature: dto.temperature,
+        maxTokens: dto.maxTokens,
+        enableMemoryExtraction: dto.enableMemoryExtraction,
+        enableSkillLoading: dto.enableSkillLoading,
+      },
+      dto.threadId,
+    );
+
+    return {
+      content: result.content,
+      memoriesLoaded: result.memoriesLoaded,
+      skillsLoaded: result.skillsLoaded,
+      memoriesStored: result.memoriesStored,
+      usage: result.usage,
+      trace: result.trace,
+    };
+  }
+
+  @Public()
+  @Get('store/memories/:userId/search')
+  @ApiOperation({
+    summary: '搜索用户记忆（语义搜索）',
+    description:
+      '通过自然语言查询在 Store 中搜索与用户相关的记忆条目。' +
+      '支持按记忆类型筛选（semantic/episodic/procedural）。',
+  })
+  @ApiParam({ name: 'userId', description: '用户标识' })
+  @ApiResponse({ status: 200, description: '搜索结果列表' })
+  async searchMemories(
+    @Param('userId') userId: string,
+    @Query() query: SearchMemoriesQueryDto,
+  ) {
+    this.logger.log(`[Store] 搜索记忆，用户: ${userId}, 查询: ${query.query}`);
+
+    const results = await this.memoryStoreService.searchMemories(
+      userId,
+      query.query,
+      {
+        type: query.type as MemoryType | undefined,
+        limit: query.limit,
+      },
+    );
+
+    return {
+      userId,
+      count: results.length,
+      items: results.map((item) => ({
+        key: item.key,
+        value: item.value,
+        namespace: item.namespace,
+      })),
+    };
+  }
+
+  @Public()
+  @Post('store/memories/:userId')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: '创建记忆',
+    description: '手动为指定用户创建一条长期记忆。',
+  })
+  @ApiParam({ name: 'userId', description: '用户标识' })
+  @ApiResponse({ status: 201, description: '记忆创建成功' })
+  async putMemory(
+    @Param('userId') userId: string,
+    @Body() dto: PutMemoryRequestDto,
+  ) {
+    const key = crypto.randomUUID();
+
+    await this.memoryStoreService.putMemory(
+      userId,
+      dto.type as unknown as MemoryType,
+      key,
+      {
+        content: dto.content,
+        type: dto.type as unknown as MemoryType,
+        source: 'manual',
+        metadata: dto.metadata,
+      },
+    );
+
+    this.logger.log(
+      `[Store] 创建记忆，用户: ${userId}, 类型: ${dto.type}, key: ${key}`,
+    );
+
+    return { userId, key, type: dto.type, created: true };
+  }
+
+  @Public()
+  @Post('store/memories/:userId/delete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '删除记忆',
+    description:
+      '删除指定用户的一条记忆。使用 POST + body 避免 DELETE 方法限制。',
+  })
+  @ApiParam({ name: 'userId', description: '用户标识' })
+  @ApiResponse({ status: 200, description: '记忆删除成功' })
+  async deleteMemory(
+    @Param('userId') userId: string,
+    @Body() body: { type: string; key: string },
+  ) {
+    await this.memoryStoreService.deleteMemory(
+      userId,
+      body.type as MemoryType,
+      body.key,
+    );
+
+    this.logger.log(`[Store] 删除记忆，用户: ${userId}, key: ${body.key}`);
+
+    return { userId, key: body.key, deleted: true };
+  }
+
+  @Public()
+  @Get('skills')
+  @ApiOperation({
+    summary: '列出所有可用技能',
+    description:
+      '返回文件系统中所有已注册技能的目录信息。' +
+      '技能以 SKILL.md 文件形式存储在 src/ai/skills/ 目录下，' +
+      '遵循 Agent Skills 开放标准（Cursor / Claude Code 同款模式）。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '技能目录列表',
+    type: [SkillCatalogEntryDto],
+  })
+  async listSkills(): Promise<SkillCatalogEntryDto[]> {
+    this.logger.log('[Skills] 获取技能目录');
+    return this.skillLoaderService.getCatalogEntries();
+  }
+
+  @Public()
+  @Post('skills/reload')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '重新扫描技能目录',
+    description: '重新扫描文件系统中的技能目录，刷新技能缓存。',
+  })
+  @ApiResponse({ status: 200, description: '技能目录已刷新' })
+  async reloadSkills() {
+    this.logger.log('[Skills] 重新扫描技能目录');
+    await this.skillLoaderService.scan();
+
+    return {
+      reloaded: true,
+      count: this.skillLoaderService.getSkillNames().length,
+      skills: this.skillLoaderService.getSkillNames(),
     };
   }
 

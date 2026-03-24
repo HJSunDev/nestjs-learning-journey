@@ -15,6 +15,12 @@ import { ReactService } from './agents/react.service';
 import { CheckpointService, ThreadService } from './agents/persistence';
 import { HitlService } from './agents/hitl';
 import { AdvancedPatternsService } from './agents/advanced-patterns';
+import {
+  MemoryStoreService,
+  MemoryAgentService,
+  LaneQueueService,
+  SkillLoaderService,
+} from './agents/memory-store';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
@@ -91,6 +97,13 @@ import { ResilienceService } from './resilience';
  * - buildReflectionGraph:    Reflection 图构建器（generate → evaluate → shouldReflect 循环）
  * - buildPlanExecuteGraph:   Plan-Execute 图构建器（planner → executor → replanner，含 Subgraph 组合）
  *
+ * 052 新增记忆体系与运行时扩展层：
+ * - MemoryStoreService:     PostgresStore/InMemoryStore 生命周期管理（长期记忆 + 语义搜索）
+ * - MemoryAgentService:     Memory-aware Agent 编排（记忆检索 → 对话 → 记忆提取）
+ * - LaneQueueService:       Per-thread 串行执行队列（防止 checkpoint 写入竞争）
+ * - SkillLoaderService:     文件系统技能加载器（SKILL.md 扫描 + 三层渐进式加载）
+ * - buildMemoryGraph:       Memory Graph 构建器（loadMemories → callModel → extractMemories）
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -123,6 +136,10 @@ import { ResilienceService } from './resilience';
     ThreadService,
     HitlService,
     AdvancedPatternsService,
+    MemoryStoreService,
+    MemoryAgentService,
+    LaneQueueService,
+    SkillLoaderService,
   ],
   exports: [
     AiService,
@@ -145,6 +162,10 @@ import { ResilienceService } from './resilience';
     ThreadService,
     HitlService,
     AdvancedPatternsService,
+    MemoryStoreService,
+    MemoryAgentService,
+    LaneQueueService,
+    SkillLoaderService,
   ],
 })
 export class AiModule {}
