@@ -3,6 +3,7 @@ import type { Serialized } from '@langchain/core/load/serializable';
 import type { LLMResult } from '@langchain/core/outputs';
 import type { ChainValues } from '@langchain/core/utils/types';
 import type { Document } from '@langchain/core/documents';
+import { isGraphBubbleUp } from '@langchain/langgraph';
 import { Logger } from '@nestjs/common';
 import type { TraceSpan, TraceSummary } from './trace.interface';
 
@@ -153,6 +154,15 @@ export class LangChainTracer extends BaseCallbackHandler {
   }
 
   handleChainError(error: Error, runId: string): void {
+    // GraphBubbleUp 是 LangGraph 的正常控制流异常（Handoff / interrupt），非真实错误
+    if (isGraphBubbleUp(error)) {
+      const span = this.endSpan(runId);
+      this.logger.debug(
+        `[Trace:${this.traceId}] Chain 控制流转移 → ${span?.name ?? runId}`,
+      );
+      return;
+    }
+
     const span = this.endSpan(runId, error.message);
     this.logger.warn(
       `[Trace:${this.traceId}] Chain 错误 → ${span?.name ?? runId}: ${error.message}`,

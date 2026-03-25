@@ -21,6 +21,7 @@ import {
   LaneQueueService,
   SkillLoaderService,
 } from './agents/memory-store';
+import { MultiAgentService } from './agents/multi';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
@@ -104,6 +105,10 @@ import { ResilienceService } from './resilience';
  * - SkillLoaderService:     文件系统技能加载器（SKILL.md 扫描 + 三层渐进式加载）
  * - buildMemoryGraph:       Memory Graph 构建器（loadMemories → callModel → extractMemories）
  *
+ * 053 新增多智能体协作层：
+ * - MultiAgentService:      多智能体编排服务（createSupervisor 工具型 Handoff 路由）
+ * - buildResearchAgent / buildCodeAgent: 专业化子 Agent 构建器（createReactAgent 预构建）
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -140,6 +145,7 @@ import { ResilienceService } from './resilience';
     MemoryAgentService,
     LaneQueueService,
     SkillLoaderService,
+    MultiAgentService,
   ],
   exports: [
     AiService,
@@ -166,6 +172,7 @@ import { ResilienceService } from './resilience';
     MemoryAgentService,
     LaneQueueService,
     SkillLoaderService,
+    MultiAgentService,
   ],
 })
 export class AiModule {}

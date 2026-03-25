@@ -34,6 +34,7 @@ import {
   SkillLoaderService,
   MemoryType,
 } from './memory-store';
+import { MultiAgentService } from './multi';
 import {
   GraphChatRequestDto,
   GraphChatResponseDto,
@@ -57,6 +58,8 @@ import {
   PutMemoryRequestDto,
   SearchMemoriesQueryDto,
   SkillCatalogEntryDto,
+  MultiAgentChatRequestDto,
+  MultiAgentChatResponseDto,
 } from '../dto';
 import { AiExceptionFilter } from '../filters/ai-exception.filter';
 import { AiStreamAdapter } from '../adapters/stream.adapter';
@@ -105,6 +108,10 @@ import { Public } from 'src/common/decorators/public.decorator';
  * - POST /store/memories/:userId/delete  删除记忆
  * - GET  /skills                         列出已扫描的技能（调试用）
  * - POST /skills/reload                  重新扫描技能目录（开发热刷新）
+ *
+ * 053 章节端点（Multi-Agent Architecture）：
+ * - POST /multi/chat                     多智能体 Supervisor 对话（prebuilt / custom 双模式）
+ * - POST /multi/chat/stream              多智能体 Supervisor 流式对话
  */
 @ApiTags('AI 服务 (Agent 智能体)')
 @ApiBearerAuth()
@@ -122,6 +129,7 @@ export class AgentController {
     private readonly memoryAgentService: MemoryAgentService,
     private readonly memoryStoreService: MemoryStoreService,
     private readonly skillLoaderService: SkillLoaderService,
+    private readonly multiAgentService: MultiAgentService,
     private readonly streamAdapter: AiStreamAdapter,
   ) {}
 
@@ -984,6 +992,90 @@ export class AgentController {
       count: this.skillLoaderService.getSkillNames().length,
       skills: this.skillLoaderService.getSkillNames(),
     };
+  }
+
+  // ============================================================
+  // 053 Multi-Agent Architecture 端点
+  // ============================================================
+
+  @Public()
+  @Post('multi/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '多智能体 Supervisor 对话',
+    description:
+      '基于 053 多智能体协作架构（@langchain/langgraph-supervisor）。' +
+      'Supervisor Agent 分析用户任务，通过 Handoff 工具委派给专业子 Agent 执行，汇总结果后回复。' +
+      '内置子 Agent：research_agent（信息检索）、code_agent（计算分析）。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '多智能体 Supervisor 对话成功',
+    type: MultiAgentChatResponseDto,
+  })
+  async multiAgentChat(
+    @Body() dto: MultiAgentChatRequestDto,
+  ): Promise<MultiAgentChatResponseDto> {
+    this.logger.log(
+      `[MultiAgent] 对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const result = await this.multiAgentService.invoke({
+      provider: dto.provider,
+      model: dto.model,
+      messages: dto.messages,
+      systemPrompt: dto.systemPrompt,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      enabledAgents: dto.enabledAgents,
+    });
+
+    return {
+      content: result.content,
+      agentCalls: result.agentCalls,
+      totalDelegations: result.totalDelegations,
+      usage: result.usage,
+      trace: result.trace,
+    };
+  }
+
+  @Public()
+  @Post('multi/chat/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '多智能体 Supervisor 流式对话',
+    description:
+      '流式版多智能体 Supervisor 对话。' +
+      '实时推送各 Agent 的执行状态和响应内容。',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiResponse({
+    status: 200,
+    description: 'SSE 流式响应（含 META/TEXT/DONE 事件）',
+  })
+  streamMultiAgentChat(
+    @Body() dto: MultiAgentChatRequestDto,
+    @Res() res: Response,
+  ): void {
+    this.logger.log(
+      `[MultiAgent] 流式对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const stream$ = this.multiAgentService.stream({
+      provider: dto.provider,
+      model: dto.model,
+      messages: dto.messages,
+      systemPrompt: dto.systemPrompt,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      enabledAgents: dto.enabledAgents,
+    });
+
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: 'MultiAgent Supervisor对话',
+      provider: dto.provider,
+      model: dto.model,
+    });
   }
 
   // ============================================================

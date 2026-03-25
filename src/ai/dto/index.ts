@@ -13,3 +13,4 @@ export * from './thread-state.dto';
 export * from './hitl.dto';
 export * from './advanced-patterns.dto';
 export * from './memory-store.dto';
+export * from './multi-agent.dto';

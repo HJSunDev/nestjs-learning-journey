@@ -57,3 +57,10 @@ export type {
   ReflectionInvokeParams,
   PlanExecuteInvokeParams,
 } from './advanced-patterns';
+
+export { MultiAgentService } from './multi';
+export {
+  type AgentDefinition,
+  type MultiAgentInvokeParams,
+  type MultiAgentInvokeResult,
+} from './multi';
