@@ -162,4 +162,37 @@ export default registerAs('ai', () => ({
     // 技能目录路径（支持绝对/相对路径，默认 src/ai/skills）
     dir: process.env.AI_SKILLS_DIR || '',
   },
+
+  // 熔断器配置（054 章节：生产级 Agent 运维）
+  circuitBreaker: {
+    // 连续失败多少次后触发熔断
+    consecutiveFailures: parseInt(
+      process.env.AI_CIRCUIT_BREAKER_THRESHOLD || '5',
+      10,
+    ),
+    // 熔断后多久（毫秒）进入半开状态尝试恢复
+    halfOpenAfterMs: parseInt(
+      process.env.AI_CIRCUIT_BREAKER_HALF_OPEN_AFTER || '30000',
+      10,
+    ),
+  },
+
+  // 上下文压缩配置（054 章节：Context Compaction）
+  compaction: {
+    // 超过此消息数量触发压缩
+    maxMessages: parseInt(process.env.AI_COMPACTION_MAX_MESSAGES || '50', 10),
+    // 摘要模式下保留最近多少条消息
+    preserveRecent: parseInt(
+      process.env.AI_COMPACTION_PRESERVE_RECENT || '10',
+      10,
+    ),
+  },
+
+  // MCP 工具配置（054 章节：MCP 工具标准化）
+  mcp: {
+    // 是否启用 MCP 工具加载
+    enabled: process.env.AI_MCP_ENABLED === 'true',
+    // MCP 服务器配置（JSON 格式字符串）
+    servers: process.env.AI_MCP_SERVERS || '{}',
+  },
 }));

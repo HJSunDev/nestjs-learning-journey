@@ -22,6 +22,8 @@ import {
   SkillLoaderService,
 } from './agents/memory-store';
 import { MultiAgentService } from './agents/multi';
+import { OpsService } from './agents/ops';
+import { ContextCompactionService } from './agents/shared/compaction';
 import { AiStreamAdapter } from './adapters/stream.adapter';
 import { ChatChainBuilder } from './chains';
 import { SchemaRegistry } from './schemas';
@@ -31,7 +33,8 @@ import {
   VectorStoreService,
   DocumentProcessor,
 } from './rag';
-import { ResilienceService } from './resilience';
+import { ResilienceService, CircuitBreakerRegistry } from './resilience';
+import { McpToolAdapter } from './tools/mcp';
 
 /**
  * AI 模块
@@ -109,6 +112,14 @@ import { ResilienceService } from './resilience';
  * - MultiAgentService:      多智能体编排服务（createSupervisor 工具型 Handoff 路由）
  * - buildResearchAgent / buildCodeAgent: 专业化子 Agent 构建器（createReactAgent 预构建）
  *
+ * 054 新增生产级 Agent 运维层：
+ * - OpsService:               运维编排服务（熔断+压缩+守卫+指标的完整流水线）
+ * - CircuitBreakerRegistry:   per-provider 熔断器注册表（cockatiel 驱动）
+ * - ContextCompactionService: 上下文压缩服务（trimMessages + LLM 摘要）
+ * - McpToolAdapter:           MCP 工具适配器（@langchain/mcp-adapters 集成）
+ * - AgentMetricsCollector:    请求级运维指标收集器（per-request 实例，非 DI）
+ * - OutputGuardrail(输出护栏):          输出守卫（PII 脱敏 + 内容安全检测，纯函数，非 DI）
+ *
  * 核心依赖:
  * - AiModelFactory:       模型实例化工厂（生产 LangChain BaseChatModel）
  * - ReasoningNormalizer:   推理字段归一化（屏蔽厂商差异）
@@ -146,6 +157,10 @@ import { ResilienceService } from './resilience';
     LaneQueueService,
     SkillLoaderService,
     MultiAgentService,
+    OpsService,
+    CircuitBreakerRegistry,
+    ContextCompactionService,
+    McpToolAdapter,
   ],
   exports: [
     AiService,
@@ -173,6 +188,10 @@ import { ResilienceService } from './resilience';
     LaneQueueService,
     SkillLoaderService,
     MultiAgentService,
+    OpsService,
+    CircuitBreakerRegistry,
+    ContextCompactionService,
+    McpToolAdapter,
   ],
 })
 export class AiModule {}

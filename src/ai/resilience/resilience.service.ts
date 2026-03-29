@@ -4,6 +4,7 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { AiModelFactory } from '../factories/model.factory';
 import type { RetryPolicy, FallbackConfig } from './resilience.config';
 import { DEFAULT_RETRY_POLICY } from './resilience.config';
+import { CircuitBreakerRegistry } from './circuit-breaker.registry';
 
 /**
  * 韧性服务
@@ -16,12 +17,19 @@ import { DEFAULT_RETRY_POLICY } from './resilience.config';
  *   通过组合式 API 叠加韧性能力（装饰者模式）
  * - 重试和降级互为独立的关注点，可单独使用也可组合使用
  * - 降级链需要创建新的模型实例，因此依赖 AiModelFactory
+ *
+ * 054 扩展：
+ * - withCircuitBreaker: 在重试和降级之上叠加 per-provider 熔断保护
+ *   熔断器由 CircuitBreakerRegistry 管理，每个 provider 独立熔断
  */
 @Injectable()
 export class ResilienceService {
   private readonly logger = new Logger(ResilienceService.name);
 
-  constructor(private readonly modelFactory: AiModelFactory) {}
+  constructor(
+    private readonly modelFactory: AiModelFactory,
+    private readonly circuitBreakerRegistry: CircuitBreakerRegistry,
+  ) {}
 
   /**
    * 为 Runnable 添加重试能力
@@ -117,5 +125,46 @@ export class ResilienceService {
     }
 
     return models;
+  }
+
+  /**
+   * 在 per-provider 熔断器保护下执行异步操作
+   *
+   * 当指定 provider 连续失败达到阈值后，后续请求立即快速失败（抛出 BrokenCircuitError），
+   * 避免向已故障的提供商持续发送注定失败的请求。
+   * 半开窗口到期后允许一个探测请求检查恢复情况。
+   *
+   * 推荐的韧性组合顺序（从外到内）：
+   * CircuitBreaker → Retry → Fallbacks → 实际调用
+   *
+   * @param provider - AI 提供商标识（如 'deepseek'、'siliconflow'）
+   * @param fn - 要保护的异步操作
+   * @returns 操作执行结果
+   * @throws {BrokenCircuitError} 当熔断器处于开启状态时
+   *
+   * @example
+   * // 参数示例
+   * const provider = 'deepseek';
+   * const fn = () => model.invoke(messages);
+   *
+   * // 调用示例
+   * const result = await resilienceService.withCircuitBreaker(provider, fn);
+   *
+   * // 返回值示例
+   * // AIMessage { content: '...', response_metadata: {...} }
+   */
+  async withCircuitBreaker<T>(
+    provider: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    this.logger.debug(`通过熔断器执行: provider=${provider}`);
+    return this.circuitBreakerRegistry.execute(provider, fn);
+  }
+
+  /**
+   * 获取熔断器注册表实例（供状态查询用）
+   */
+  getCircuitBreakerRegistry(): CircuitBreakerRegistry {
+    return this.circuitBreakerRegistry;
   }
 }

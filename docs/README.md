@@ -136,8 +136,8 @@
   - PostgresStore/InMemoryStore 长期记忆（语义/情景/程序三类记忆分类学）、语义搜索（pgvector）、Lane Queue 会话串行队列、Skills-as-Markdown 运行时扩展、Memory Graph（记忆加载 → 对话 → 记忆提取）
 - ✅ **[053. 多智能体协作系统 (Multi-Agent Architecture)](notes/053-multi-agent-architecture.md)**
   - 官方 Supervisor 方案（`@langchain/langgraph-supervisor` + `createSupervisor`）、Handoff 工具型路由（`Command` 跨图路由）、子 Agent 工厂模式、checkpoint namespace 隔离、OpenClaw Brain-Body-Soul 架构映射
-- 🔲 **054. 生产级 Agent 运维与治理 (Production Agent Operations)**
-  - 异步长时运行 + Durable 模式选型、Circuit Breaker 熔断、Contextual Compaction 上下文压缩、安全护栏（Security Agent + Agent 隔离）、MCP 工具标准化、评估指标体系
+- ✅ **[054. 生产级 Agent 运维与治理 (Production Agent Operations)](notes/054-production-agent-operations.md)**
+  - Circuit Breaker 熔断器（cockatiel per-provider 隔离）、Context Compaction 上下文压缩（trim/summarize 双策略）、Output Guardrail 输出守卫（PII 脱敏 + 内容安全）、MCP 工具标准化（@langchain/mcp-adapters 集成）、AgentMetrics 四维评估指标体系、OpsService 运维流水线编排
 <!-- NEW_AGENT_END -->
 
 ## 📝 维护指南

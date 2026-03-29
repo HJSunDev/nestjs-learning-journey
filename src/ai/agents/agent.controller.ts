@@ -35,6 +35,7 @@ import {
   MemoryType,
 } from './memory-store';
 import { MultiAgentService } from './multi';
+import { OpsService } from './ops';
 import {
   GraphChatRequestDto,
   GraphChatResponseDto,
@@ -60,6 +61,8 @@ import {
   SkillCatalogEntryDto,
   MultiAgentChatRequestDto,
   MultiAgentChatResponseDto,
+  OpsChatRequestDto,
+  OpsChatResponseDto,
 } from '../dto';
 import { AiExceptionFilter } from '../filters/ai-exception.filter';
 import { AiStreamAdapter } from '../adapters/stream.adapter';
@@ -112,6 +115,12 @@ import { Public } from 'src/common/decorators/public.decorator';
  * 053 章节端点（Multi-Agent Architecture）：
  * - POST /multi/chat                     多智能体 Supervisor 对话（prebuilt / custom 双模式）
  * - POST /multi/chat/stream              多智能体 Supervisor 流式对话
+ *
+ * 054 章节端点（Production Agent Operations）：
+ * - POST /ops/chat                       生产级 Agent 运维对话（熔断+压缩+守卫+指标）
+ * - POST /ops/chat/stream                生产级 Agent 运维流式对话
+ * - GET  /ops/circuit-breakers           获取所有 provider 熔断器状态
+ * - POST /ops/circuit-breakers/:provider/reset  重置指定 provider 的熔断器
  */
 @ApiTags('AI 服务 (Agent 智能体)')
 @ApiBearerAuth()
@@ -130,6 +139,7 @@ export class AgentController {
     private readonly memoryStoreService: MemoryStoreService,
     private readonly skillLoaderService: SkillLoaderService,
     private readonly multiAgentService: MultiAgentService,
+    private readonly opsService: OpsService,
     private readonly streamAdapter: AiStreamAdapter,
   ) {}
 
@@ -1076,6 +1086,118 @@ export class AgentController {
       provider: dto.provider,
       model: dto.model,
     });
+  }
+
+  // ============================================================
+  // 054 Production Agent Operations 端点
+  // ============================================================
+
+  @Public()
+  @Post('ops/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '生产级 Agent 运维对话',
+    description:
+      '在多智能体 Supervisor 基础上叠加完整的生产运维层：' +
+      '输入守卫（Prompt Injection 防护）→ 上下文压缩（长对话自动裁剪/摘要）' +
+      '→ 熔断保护（per-provider 故障隔离）→ 输出守卫（PII 脱敏 + 内容安全）' +
+      '→ 全链路指标收集。各能力通过请求参数独立开关控制。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '生产级运维对话成功，包含运维指标报告',
+    type: OpsChatResponseDto,
+  })
+  async opsChat(@Body() dto: OpsChatRequestDto) {
+    this.logger.log(
+      `[Ops] 运维对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    return this.opsService.invoke({
+      provider: dto.provider,
+      model: dto.model,
+      messages: dto.messages,
+      systemPrompt: dto.systemPrompt,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      enabledAgents: dto.enabledAgents,
+      enableCircuitBreaker: dto.enableCircuitBreaker,
+      enableCompaction: dto.enableCompaction,
+      compactionStrategy: dto.compactionStrategy,
+      enableOutputGuardrail: dto.enableOutputGuardrail,
+      enablePiiSanitization: dto.enablePiiSanitization,
+    });
+  }
+
+  @Public()
+  @Post('ops/chat/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '生产级 Agent 运维流式对话',
+    description:
+      '与 ops/chat 相同的运维流水线，但以 SSE 流式返回。' +
+      'DONE 事件中包含运维指标摘要。',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiResponse({
+    status: 200,
+    description: 'SSE 流式响应（含 META/TEXT/TOOL_CALL/DONE 事件 + 运维指标）',
+  })
+  streamOpsChat(@Body() dto: OpsChatRequestDto, @Res() res: Response): void {
+    this.logger.log(
+      `[Ops] 流式运维对话，提供商: ${dto.provider}, 模型: ${dto.model}`,
+    );
+
+    const stream$ = this.opsService.stream({
+      provider: dto.provider,
+      model: dto.model,
+      messages: dto.messages,
+      systemPrompt: dto.systemPrompt,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+      enabledAgents: dto.enabledAgents,
+      enableCircuitBreaker: dto.enableCircuitBreaker,
+      enableCompaction: dto.enableCompaction,
+      compactionStrategy: dto.compactionStrategy,
+      enableOutputGuardrail: dto.enableOutputGuardrail,
+      enablePiiSanitization: dto.enablePiiSanitization,
+    });
+
+    this.streamAdapter.pipeStandardStream(res, stream$, {
+      label: 'Ops 生产级Agent对话',
+      provider: dto.provider,
+      model: dto.model,
+    });
+  }
+
+  @Public()
+  @Get('ops/circuit-breakers')
+  @ApiOperation({
+    summary: '获取所有 provider 熔断器状态',
+    description:
+      '返回每个 AI 提供商的熔断器当前状态（CLOSED/OPEN/HALF_OPEN）、' +
+      '累计失败和成功次数，用于运维监控面板。',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '熔断器状态列表',
+  })
+  getCircuitBreakerStatus() {
+    return this.opsService.getCircuitBreakerStatus();
+  }
+
+  @Public()
+  @Post('ops/circuit-breakers/:provider/reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '重置指定 provider 的熔断器',
+    description: '手动将熔断器恢复为 CLOSED 状态，用于人工干预恢复。',
+  })
+  @ApiParam({ name: 'provider', description: 'AI 提供商标识（如 deepseek）' })
+  @ApiResponse({ status: 200, description: '熔断器已重置' })
+  resetCircuitBreaker(@Param('provider') provider: string) {
+    this.opsService.resetCircuitBreaker(provider);
+    return { message: `熔断器已重置: ${provider}` };
   }
 
   // ============================================================
